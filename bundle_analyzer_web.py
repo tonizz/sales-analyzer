@@ -347,6 +347,16 @@ with st.sidebar:
     st.markdown("---")
     uploaded = st.file_uploader("📁 **Upload File Excel**", type=["xlsx", "xls"])
 
+    with st.expander("🔧 Filter & Pengaturan", expanded=True):
+        min_items = st.number_input("Min item per bundle", 2, 20, 2)
+        min_disc = st.number_input("Min discount %", 0.0, 100.0, 0.0, 0.5)
+        loc_filter = st.text_input("FLOCCD filter (pisah koma)", placeholder="mis. 55592, 55733")
+        date_preset = st.selectbox("Periode", PRESET_PERIODS)
+        d_from, d_to = None, None
+        if date_preset == "Custom":
+            d_from = st.date_input("Dari tanggal", value=None)
+            d_to = st.date_input("Sampai tanggal", value=None)
+
     with st.expander("📡 Auto-fetch dari Google Drive", expanded=False):
         st.caption(
             "Setup 1x: upload file ke Google Drive → Share → 'Anyone with the link' "
@@ -381,16 +391,6 @@ with st.sidebar:
         with col_b:
             if default_url and st.button("ℹ️ Lihat info", use_container_width=True, key="fetch_info"):
                 st.info(f"URL default dari secrets: `{default_url[:60]}...`")
-
-    with st.expander("🔧 Filter & Pengaturan", expanded=True):
-        min_items = st.number_input("Min item per bundle", 2, 20, 2)
-        min_disc = st.number_input("Min discount %", 0.0, 100.0, 0.0, 0.5)
-        loc_filter = st.text_input("FLOCCD filter (pisah koma)", placeholder="mis. 55592, 55733")
-        date_preset = st.selectbox("Periode", PRESET_PERIODS)
-        d_from, d_to = None, None
-        if date_preset == "Custom":
-            d_from = st.date_input("Dari tanggal", value=None)
-            d_to = st.date_input("Sampai tanggal", value=None)
 
     if uploaded is not None:
         if st.button("🚀 Proses Data", type="primary", use_container_width=True):
