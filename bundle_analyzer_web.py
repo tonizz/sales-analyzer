@@ -307,7 +307,7 @@ def process_file(uploaded, min_items, min_disc, loc_filter, date_preset, d_from,
             ].copy()
         st.session_state.analyzer = a
         st.session_state.data_loaded = True
-        st.session_state.file_name = uploaded.name
+        st.session_state.file_name = fname
     finally:
         try:
             os.unlink(tmp)
