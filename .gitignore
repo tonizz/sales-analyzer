@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# PyInstaller
+build/
+*.spec
+
+# OS
+.DS_Store
+desktop.ini
+
+# Test artifacts
+*.tmp
+*.bak
+
+# Excel file sumber (data contoh, jangan di-commit)
+DBKSTHN_*.xlsx
+
+# Output bundle analysis
+bundle_analysis*.xlsx
+*_bundle_analysis*.xlsx
+bundle_search_*.xlsx
+output/
