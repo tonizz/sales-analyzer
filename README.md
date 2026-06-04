@@ -56,3 +56,34 @@ python bundle_analyzer.py
 ## Lisensi
 
 Internal tool.
+
+---
+
+## 🚀 Deploy ke Streamlit Cloud (GRATIS)
+
+Aplikasi web bisa di-deploy gratis ke **Streamlit Community Cloud** agar bisa diakses dari mana saja via internet.
+
+### Langkah deploy (5 menit):
+
+1. **Buka https://share.streamlit.io** (login dengan akun GitHub `tonizz`)
+2. Klik **"New app"**
+3. Isi form:
+   - **Repository**: `tonizz/sales-analyzer`
+   - **Branch**: `main`
+   - **Main file path**: `bundle_analyzer_web.py`
+   - **App URL**: pilih subdomain (mis. `sales-analyzer-tonizz`)
+4. Klik **"Deploy"** 🚀
+5. Tunggu 2-5 menit (build & install dependencies)
+6. Aplikasi live di: `https://[subdomain].streamlit.app`
+
+### File yang dibutuhkan (sudah ada):
+- ✅ `bundle_analyzer_web.py` — main file
+- ✅ `requirements.txt` — Python dependencies
+- ✅ `runtime.txt` — Python version (3.11)
+- ✅ `.streamlit/config.toml` — theme & server config
+
+### Catatan:
+- Repo harus **public** (sudah)
+- Setiap push ke branch `main` → otomatis re-deploy
+- Free tier: app tidur setelah 7 hari tidak ada访问, otomatis bangun saat ada yang akses
+- Free tier: 1 GB RAM, cukup untuk data 100k+ baris
