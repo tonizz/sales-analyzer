@@ -45,3 +45,5 @@ token_github.txt
 *.key
 .env
 .env.*
+.streamlit/secrets.toml
+secrets.toml

@@ -72,7 +72,7 @@ Aplikasi web bisa di-deploy gratis ke **Streamlit Community Cloud** agar bisa di
    - **Branch**: `main`
    - **Main file path**: `bundle_analyzer_web.py`
    - **App URL**: pilih subdomain (mis. `sales-analyzer-tonizz`)
-4. Klik **"Deploy"** 🚀
+4. Klik **"Deploy!"** 🚀
 5. Tunggu 2-5 menit (build & install dependencies)
 6. Aplikasi live di: `https://[subdomain].streamlit.app`
 
@@ -87,3 +87,37 @@ Aplikasi web bisa di-deploy gratis ke **Streamlit Community Cloud** agar bisa di
 - Setiap push ke branch `main` → otomatis re-deploy
 - Free tier: app tidur setelah 7 hari tidak ada访问, otomatis bangun saat ada yang akses
 - Free tier: 1 GB RAM, cukup untuk data 100k+ baris
+
+## 🔐 Autentikasi (Password Gate)
+
+App ini diproteksi login. **Default credentials** (dev only — untuk testing):
+
+| Username | Password |
+|---|---|
+| `admin` | `admin123` |
+| `tonizz` | `tonizz2026` |
+
+### Ganti password di production:
+
+1. Generate bcrypt hash baru:
+   ```python
+   import bcrypt; print(bcrypt.hashpw(b"password_baru", bcrypt.gensalt()).decode())
+   ```
+2. Buka https://share.streamlit.io/ → klik app → **Settings** → **Secrets**
+3. Isi format TOML:
+   ```toml
+   [users]
+   admin = "$2b$12$..."
+   tonizz = "$2b$12$..."
+   ```
+4. Save → app auto-restart, password baru aktif
+
+### Tambah user baru:
+
+Cukup tambah baris di secrets.toml:
+```toml
+[users]
+admin = "$2b$12$..."
+tonizz = "$2b$12$..."
+user_baru = "$2b$12$..."
+```
