@@ -37,3 +37,11 @@ bundle_analysis*.xlsx
 *_bundle_analysis*.xlsx
 bundle_search_*.xlsx
 output/
+
+# Secrets (token, key, etc.) — JANGAN PERNAH COMMIT
+token_github.txt
+*_token*.txt
+*.pem
+*.key
+.env
+.env.*
