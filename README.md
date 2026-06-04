@@ -121,3 +121,21 @@ admin = "$2b$12$..."
 tonizz = "$2b$12$..."
 user_baru = "$2b$12$..."
 ```
+
+## 📡 Auto-fetch dari Google Drive (opsional)
+
+App bisa **auto-fetch data** dari Google Drive sharing link. Tidak perlu upload manual.
+
+### Setup:
+1. Upload `DBKSTHN_*.xlsx` ke Google Drive
+2. Share → "Anyone with the link" → Copy link
+3. Di app, buka sidebar → "📡 Auto-fetch dari Google Drive" → paste link → klik "🔄 Refresh dari URL"
+
+### Default URL via secrets:
+Tambahkan di Streamlit Secrets:
+```toml
+[data]
+url = "https://drive.google.com/file/d/1ABC...XYZ/view?usp=sharing"
+```
+
+Update file di Drive = klik refresh = data baru. Detail lengkap: lihat [PANDUAN.md](./PANDUAN.md) section 13.

@@ -8,14 +8,17 @@ Akses di:  http://localhost:8501
 
 import io
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 import bcrypt
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 
 # Reuse analyzer dari file desktop
@@ -166,6 +169,82 @@ def _login_gate():
 _login_gate()
 
 
+# ============= FETCH FROM URL =============
+def extract_gdrive_id(url: str) -> str | None:
+    """Extract file ID dari Google Drive sharing URL."""
+    patterns = [
+        r"/file/d/([a-zA-Z0-9_-]+)",
+        r"[?&]id=([a-zA-Z0-9_-]+)",
+        r"/d/([a-zA-Z0-9_-]+)",
+    ]
+    for p in patterns:
+        m = re.search(p, url)
+        if m:
+            return m.group(1)
+    return None
+
+
+def fetch_from_url(url: str) -> bytes:
+    """Download file dari URL. Saat ini support Google Drive sharing link
+    (format: https://drive.google.com/file/d/FILE_ID/view?usp=sharing).
+    Return file content as bytes. Raise on error.
+    """
+    if not url or not url.strip():
+        raise ValueError("URL kosong")
+    url = url.strip()
+    parsed = urlparse(url)
+    if "drive.google.com" in parsed.netloc or "docs.google.com" in parsed.netloc:
+        file_id = extract_gdrive_id(url)
+        if not file_id:
+            raise ValueError(f"Tidak bisa extract file ID dari URL: {url}")
+        session = requests.Session()
+        dl_url = "https://drive.google.com/uc"
+        resp = session.get(
+            dl_url, params={"id": file_id, "export": "download"},
+            stream=True, timeout=60,
+        )
+        ct = resp.headers.get("content-type", "")
+        if "text/html" in ct:
+            confirm = None
+            for key, value in resp.cookies.items():
+                if key.startswith("download_warning"):
+                    confirm = value
+                    break
+            if confirm:
+                resp = session.get(
+                    dl_url, params={"id": file_id, "confirm": confirm},
+                    stream=True, timeout=60,
+                )
+            else:
+                raise ValueError(
+                    "Google Drive mengembalikan HTML. Pastikan file di-share "
+                    "'Anyone with the link' dan link benar."
+                )
+        buf = io.BytesIO()
+        for chunk in resp.iter_content(32768):
+            if chunk:
+                buf.write(chunk)
+        data = buf.getvalue()
+        if data[:2] != b"PK":
+            raise ValueError(
+                f"File yang didownload bukan Excel valid (header: {data[:8]!r})."
+            )
+        return data
+    resp = requests.get(url, timeout=60)
+    resp.raise_for_status()
+    return resp.content
+
+
+def get_data_url() -> str:
+    """Ambil URL data dari secrets (prioritas) atau kosong."""
+    try:
+        if "data" in st.secrets and "url" in st.secrets["data"]:
+            return str(st.secrets["data"]["url"])
+    except Exception:
+        pass
+    return ""
+
+
 def _format_rp(x) -> str:
     if pd.isna(x) or x is None:
         return "-"
@@ -185,9 +264,17 @@ def _format_pct(x) -> str:
 
 
 def process_file(uploaded, min_items, min_disc, loc_filter, date_preset, d_from, d_to):
-    """Load & classify file, simpan analyzer di session_state."""
+    """Load & classify file, simpan analyzer di session_state.
+    `uploaded` bisa Streamlit UploadedFile, BytesIO, atau path string.
+    """
+    fname = getattr(uploaded, "name", None) or "data.xlsx"
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
-        f.write(uploaded.getvalue())
+        if hasattr(uploaded, "getvalue"):
+            f.write(uploaded.getvalue())
+        elif isinstance(uploaded, (bytes, bytearray)):
+            f.write(uploaded)
+        else:
+            f.write(Path(uploaded).read_bytes())
         tmp = f.name
     try:
         a = BundleAnalyzer()
@@ -201,7 +288,7 @@ def process_file(uploaded, min_items, min_disc, loc_filter, date_preset, d_from,
         if a.df.empty:
             st.session_state.analyzer = a
             st.session_state.data_loaded = True
-            st.session_state.file_name = uploaded.name
+            st.session_state.file_name = fname
             st.warning(
                 f"Tidak ada baris untuk lokasi '{loc_filter}'. Coba FLOCCD lain."
             )
@@ -259,6 +346,41 @@ with st.sidebar:
     st.caption("Web Edition · v2.0")
     st.markdown("---")
     uploaded = st.file_uploader("📁 **Upload File Excel**", type=["xlsx", "xls"])
+
+    with st.expander("📡 Auto-fetch dari Google Drive", expanded=False):
+        st.caption(
+            "Setup 1x: upload file ke Google Drive → Share → 'Anyone with the link' "
+            "→ paste link di bawah. App akan auto-fetch data terbaru."
+        )
+        default_url = get_data_url() or st.session_state.get("data_url", "")
+        data_url = st.text_input(
+            "Data URL (Google Drive share link)",
+            value=default_url,
+            placeholder="https://drive.google.com/file/d/.../view?usp=sharing",
+            key="data_url_input",
+        )
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("🔄 Refresh dari URL", use_container_width=True, key="fetch_url"):
+                if not data_url or not data_url.strip():
+                    st.warning("⚠️ Isi URL terlebih dahulu.")
+                else:
+                    try:
+                        with st.spinner("⏳ Download data dari Google Drive..."):
+                            data_bytes = fetch_from_url(data_url)
+                        st.session_state["data_url"] = data_url.strip()
+                        with st.spinner("⏳ Memuat & menganalisa data..."):
+                            process_file(
+                                io.BytesIO(data_bytes), min_items, min_disc,
+                                loc_filter, date_preset, d_from, d_to,
+                            )
+                        st.success(f"✓ Data ter-fetch! ({len(data_bytes):,} bytes)")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Gagal fetch: {e}")
+        with col_b:
+            if default_url and st.button("ℹ️ Lihat info", use_container_width=True, key="fetch_info"):
+                st.info(f"URL default dari secrets: `{default_url[:60]}...`")
 
     with st.expander("🔧 Filter & Pengaturan", expanded=True):
         min_items = st.number_input("Min item per bundle", 2, 20, 2)

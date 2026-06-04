@@ -583,4 +583,73 @@ Orang lain di jaringan yang sama bisa akses via `http://[IP-kamu]:8501`
 
 ---
 
+## 13. AUTO-FETCH DATA DARI GOOGLE DRIVE
+
+Versi web mendukung **auto-fetch** data dari Google Drive sharing link. Tidak perlu upload manual setiap kali.
+
+### 13.1 Cara kerja
+```
+File Excel ──upload ke──▶ Google Drive
+                              ↓ (share "Anyone with the link")
+                         Share link
+                              ↓ (paste di app)
+                         App auto-fetch data terbaru
+```
+
+### 13.2 Setup 1x (5 menit)
+1. Buka https://drive.google.com
+2. Upload file Excel (`DBKSTHN_*.xlsx`) ke Drive
+3. Klik kanan file → **Share** → **General access** → ubah ke **"Anyone with the link"** → pilih **Viewer** → **Done**
+4. Klik **Copy link**
+5. Di app, buka sidebar → expander **"📡 Auto-fetch dari Google Drive"**
+6. Paste link di field **"Data URL"** → klik **"🔄 Refresh dari URL"**
+7. App download data otomatis, proses, dan tampil di semua tab
+
+### 13.3 Update data harian
+- Update file di Google Drive (overwrite file lama, ID tetap)
+- Klik **"🔄 Refresh dari URL"** di app
+- Data baru termuat, semua tab re-render
+
+### 13.4 Setup via secrets (untuk Streamlit Cloud)
+Agar user tidak perlu paste URL tiap restart, simpan URL di secrets:
+
+Di Streamlit Cloud → Settings → Secrets, tambahkan:
+```toml
+[data]
+url = "https://drive.google.com/file/d/1ABC...XYZ/view?usp=sharing"
+```
+
+Sekarang tombol "ℹ️ Lihat info" akan muncul di app, dan URL auto-terisi.
+
+### 13.5 Error & troubleshooting
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| "Google Drive mengembalikan HTML" | File tidak di-share public | Ubah share ke "Anyone with the link" |
+| "Tidak bisa extract file ID" | Format link salah | Gunakan link dari klik "Copy link" di Google Drive |
+| "File yang didownload bukan Excel valid" | File rusak / bukan .xlsx | Cek file di Drive, pastikan format benar |
+| Download lambat | File sangat besar (>50 MB) | Pertimbangkan split per bulan atau compress |
+
+### 13.6 Fetch via command line (untuk scripting / GitHub Actions)
+Gunakan helper script:
+```bash
+python scripts/fetch_data.py \
+  --url "https://drive.google.com/file/d/XXX/view?usp=sharing" \
+  --out data.xlsx
+```
+
+Atau via env var:
+```bash
+export DATA_URL="https://drive.google.com/file/d/XXX/view"
+export OUTPUT_PATH="data.xlsx"
+python scripts/fetch_data.py
+```
+
+### 13.7 URL lain (selain Google Drive)
+Helper script juga support URL generic (file langsung di-host di server). Contoh:
+- Dropbox public link: ubah `?dl=0` jadi `?dl=1`
+- S3 / R2 presigned URL
+- OneDrive / SharePoint (perlu convert ke direct link dulu)
+
+---
+
 Dokumentasi ini mencakup semua fitur. Jika ada pertanyaan lebih lanjut atau permintaan fitur baru, silakan hubungi saya.
