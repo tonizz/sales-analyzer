@@ -652,4 +652,129 @@ Helper script juga support URL generic (file langsung di-host di server). Contoh
 
 ---
 
+## 14. STRATEGI PENJUALAN (Slow Moving, Dead Stock, Rekomendasi Promosi)
+
+Tab ke-11 di web app (atau di desktop GUI). Membantu identifikasi **item-item yang perlu tindakan** dan **rekomendasi promosi berbasis data** untuk bulan depan.
+
+### 14.1 🐌 Slow Moving Items
+
+Item dengan penjualan rendah atau menurun. 3 view sekaligus:
+
+| View | Logika | Cocok untuk |
+|---|---|---|
+| **Bottom Percentile** | Bottom X% item by `AVG_QTY/hari` | Identifikasi item paling lambat (default 20%) |
+| **Fixed Threshold** | `AVG_QTY/hari < threshold` (default 0.5) | Bisnis dengan threshold kustom |
+| **Decline** | QTY paruh-2 vs paruh-1 turun > Y% | Temukan item yang dulu laris, sekarang turun drastis |
+
+**Output per item:** `PLU`, `NAMA_BRG`, `FLOCCD`, `TOTAL_QTY`, `AVG_DAILY_QTY`, `LAST_SALE_DATE`, `DAYS_SINCE_SALE`, `CATEGORY` (Stagnant / Very Slow / Slow).
+
+**Cara baca:**
+- `AVG_DAILY_QTY` < 0.05 → **Stagnant** (hampir tidak bergerak)
+- `AVG_DAILY_QTY` 0.05-0.2 → **Very Slow**
+- `AVG_DAILY_QTY` 0.2-0.5 → **Slow** (perlu perhatian)
+- `DAYS_SINCE_SALE` tinggi → kandidat clearance
+
+### 14.2 💀 Dead Stock
+
+Item yang **TIDAK ADA transaksi dalam N hari terakhir**, tapi pernah laku sebelumnya. Kandidat kuat untuk clearance atau discontinue.
+
+**Default: 60 hari** (bisa diatur slider 7-180 hari di web app).
+
+**Output:** `PLU`, `NAMA_BRG`, `FLOCCD`, `URGENCY`, `LAST_SALE_DATE`, `DAYS_SINCE_SALE`, `LIFETIME_QTY`, `LIFETIME_REVENUE`.
+
+**Urgency indicator:**
+- 🔴 **Kritis** (> 90 hari) → harus segera clearance
+- 🟠 **Tinggi** (60-90 hari) → pertimbangkan diskon besar
+- 🟡 **Standar** (sesuai threshold) → monitor
+
+**Cara baca:**
+- Sort by `LIFETIME_REVENUE` descending → item yang dulu paling profitable tapi sekarang mati
+- Item dengan `LIFETIME_QTY` tinggi + `DAYS_SINCE_SALE` tinggi → **uang yang tertahan** di inventory
+- Untuk bisnis fashion/seasonal, threshold 30 hari mungkin lebih tepat. Untuk barang tahan lama, 90 hari.
+
+### 14.3 🎯 Rekomendasi Promosi (4 Strategi)
+
+Setiap item direkomendasikan dengan **alasan** dan **saran aksi** konkret. Asumsi biaya default 30% dari harga jual (bisa diubah di UI).
+
+#### 🧹 Strategi 1: Clearance (slow + high margin)
+- **Kriteria**: `AVG_QTY/hari ≤ 1.0` AND `margin ≥ 30%`
+- **Alasan**: "Margin tinggi (30%+) tapi lambat laku"
+- **Saran aksi**:
+  - Margin ≥ 50% → **Diskon 15-20%** atau bundle dengan best-seller
+  - Margin 35-50% → **Diskon 10-15%** atau bundle
+  - Margin 30-35% → **Bundle** dengan item fast-moving
+- **Tujuan**: Pulihkan cash flow dari inventory yang tidak bergerak
+
+#### 🚀 Strategi 2: Momentum (trending up)
+- **Kriteria**: QTY paruh-2 vs paruh-1 naik ≥ 50%
+- **Alasan**: "QTY naik 50%+ di paruh kedua periode"
+- **Saran aksi**: **Pertahankan momentum, tambah stok, featured display**
+- **Tujuan**: Capitalize momentum, jangan sampai kehabisan stok
+
+#### 🛒 Strategi 3: Cross-sell (market basket)
+- **Kriteria**: Item yang paling sering muncul dalam NOTRAN yang sama dengan top best-sellers
+- **Alasan**: "Sering dibeli bersama best-seller dalam 1 transaksi"
+- **Saran aksi**: **Bundle/diskon combo: A + B**
+- **Tujuan**: Naikkan AOV (Average Order Value) dengan cross-sell
+- **Cara baca**: Lihat `CO_OCCURRENCE` (jumlah transaksi di mana A dan B dibeli bareng). Semakin tinggi, semakin kuat afiliasi.
+
+#### 📅 Strategi 4: Musiman (seasonal)
+- **Kriteria**: Item dengan pola peak/off months yang jelas dalam 6 bulan terakhir
+- **Alasan**: "Pola musiman: peak di [bulan]"
+- **Saran aksi**: "Stok lebih banyak di [bulan peak], promo ringan 1-2 minggu sebelum"
+- **Catatan**: Untuk prediksi tahun depan, perlu data historis 1+ tahun. Saat ini pakai pola intra-tahun dari 6 bulan terakhir sebagai proxy.
+
+### 14.4 Workflow yang direkomendasikan
+
+```
+[1] Buka tab "Strategi Penjualan"
+        ↓
+[2] Cek "Slow Moving" → identifikasi item lambat
+        ↓
+[3] Cek "Dead Stock" → identifikasi item mati
+        ↓
+[4] Buka "Rekomendasi Promosi" → dapat 4 list siap-eksekusi:
+    - Clearance  → diskon bulan ini
+    - Momentum   → restock / featured
+    - Cross-sell → bundle promo
+    - Musiman    → planning bulan depan
+        ↓
+[5] Download semua strategi dalam 1 file Excel (4 sheet)
+        ↓
+[6] Share ke tim merchandising / sales
+```
+
+### 14.5 Limitasi & catatan
+
+- **Data cost**: Margin dihitung dengan asumsi biaya (default 30% dari harga jual). Jika Anda punya data `PRC_HIP` yang valid, method `margin_analysis()` existing sudah handle itu.
+- **Pola musiman**: Untuk prediksi bulan depan yang akurat, idealnya ada data historis 1 tahun. Dengan data 6 bulan, hanya bisa deteksi pola paruh-tahun.
+- **Item bundle vs satuan**: Semua analisa strategi hanya untuk **item satuan (non-bundle)**. Untuk bundle, sudah ada di tab bundle existing.
+- **Threshold default**: 60 hari untuk dead stock, 30% margin minimum untuk clearance, 50% kenaikan untuk momentum. Semua bisa diubah di UI.
+
+### 14.6 Penggunaan via Python (untuk scripting)
+
+```python
+from bundle_analyzer import BundleAnalyzer
+
+a = BundleAnalyzer()
+a.load("data.xlsx")
+a.classify(min_items=2)
+
+# Slow moving
+sm = a.slow_moving_items(view="all", bottom_pct=20, fixed_threshold=0.5)
+print(sm["bottom_pct"].head(10))
+
+# Dead stock
+ds = a.dead_stock_items(days=60)
+print(ds.head(10))
+
+# Promo recs
+pr = a.promo_recommendations(cost_pct_assumption=30.0)
+for strat in ["clearance", "momentum", "basket", "seasonal"]:
+    print(f"\n=== {strat} ===")
+    print(pr[strat].head(5))
+```
+
+---
+
 Dokumentasi ini mencakup semua fitur. Jika ada pertanyaan lebih lanjut atau permintaan fitur baru, silakan hubungi saya.

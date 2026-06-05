@@ -511,6 +511,7 @@ tabs = st.tabs(
         "📊 Perbandingan",
         "📈 Trend",
         "📋 Item Satuan",
+        "📦 Strategi Penjualan",
     ]
 )
 
@@ -1100,6 +1101,202 @@ with tabs[9]:
                     )
             except Exception as e:
                 st.error(f"Error: {e}")
+
+# ---------------- TAB 11: STRATEGI PENJUALAN ----------------
+with tabs[10]:
+    st.markdown(
+        '<div class="section-header">📦 Strategi Penjualan</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Identifikasi **slow moving**, **dead stock**, dan dapatkan **rekomendasi promosi** "
+        "berbasis data untuk bulan depan."
+    )
+
+    strat_tabs = st.tabs([
+        "🐌 Slow Moving",
+        "💀 Dead Stock",
+        "🎯 Rekomendasi Promosi",
+    ])
+
+    # ---------- Sub-tab 1: Slow Moving ----------
+    with strat_tabs[0]:
+        st.caption(
+            "Item dengan penjualan rendah/menurun. "
+            "Tersedia 3 view: bottom percentile, threshold tetap, dan penurunan drastis."
+        )
+        sm_col1, sm_col2, sm_col3 = st.columns(3)
+        with sm_col1:
+            sm_bottom = st.number_input(
+                "Bottom percentile (%)", 5, 50, 20, 5, key="sm_pct"
+            )
+        with sm_col2:
+            sm_threshold = st.number_input(
+                "Fixed threshold (qty/hari)", 0.01, 5.0, 0.5, 0.1,
+                key="sm_thr", format="%.2f"
+            )
+        with sm_col3:
+            sm_decline = st.number_input(
+                "Decline threshold (%)", 10, 90, 50, 10, key="sm_dec"
+            )
+        sm_top = st.slider("Tampilkan top N", 5, 200, 30, 5, key="sm_top")
+
+        with st.spinner("⏳ Menghitung slow moving items..."):
+            sm_data = a.slow_moving_items(
+                view="all",
+                bottom_pct=sm_bottom,
+                fixed_threshold=sm_threshold,
+                decline_pct=sm_decline,
+                top_n=sm_top,
+            )
+        sm_view = st.radio(
+            "Pilih view:",
+            ["bottom_pct", "fixed_threshold", "decline"],
+            format_func=lambda x: {
+                "bottom_pct": f"📊 Bottom {sm_bottom}% (AVG qty/hari paling rendah)",
+                "fixed_threshold": f"🎯 Fixed threshold <{sm_threshold} qty/hari",
+                "decline": f"📉 Penurunan >{sm_decline}% vs paruh pertama",
+            }[x],
+            horizontal=True,
+            key="sm_view",
+        )
+        sm_df = sm_data.get(sm_view, pd.DataFrame())
+        st.markdown(f"**{len(sm_df)} item** terdeteksi slow moving ({sm_view}).")
+        if not sm_df.empty:
+            st.dataframe(sm_df, use_container_width=True, hide_index=True, height=400)
+            # Visualisasi: distribusi qty/hari (jika ada kolom itu)
+            if "AVG_DAILY_QTY" in sm_df.columns:
+                fig = px.histogram(
+                    sm_df, x="AVG_DAILY_QTY", nbins=20,
+                    title="Distribusi AVG QTY/hari (item slow moving)",
+                    labels={"AVG_DAILY_QTY": "AVG QTY/hari"},
+                )
+                fig.update_layout(height=300)
+                st.plotly_chart(fig, use_container_width=True)
+            st.download_button(
+                "📥 Download Slow Moving (Excel)",
+                data=to_excel_bytes({
+                    "Bottom_Percentile": sm_data.get("bottom_pct", pd.DataFrame()),
+                    "Fixed_Threshold": sm_data.get("fixed_threshold", pd.DataFrame()),
+                    "Decline": sm_data.get("decline", pd.DataFrame()),
+                }),
+                file_name="slow_moving_items.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_slow",
+            )
+
+    # ---------- Sub-tab 2: Dead Stock ----------
+    with strat_tabs[1]:
+        st.caption(
+            "Item yang **tidak ada transaksi dalam N hari terakhir**, "
+            "tapi pernah laku sebelumnya. Kandidat kuat untuk clearance / discontinue."
+        )
+        ds_days = st.slider(
+            "Threshold 'tidak ada transaksi' (hari)",
+            7, 180, 60, 7, key="ds_days",
+            help="Default 60 hari. Bisa diatur sesuai karakter bisnis Anda."
+        )
+        ds_top = st.slider("Tampilkan top N", 10, 500, 100, 10, key="ds_top")
+        with st.spinner(f"⏳ Mencari item yang tidak laku {ds_days} hari..."):
+            ds_df = a.dead_stock_items(days=ds_days, top_n=ds_top)
+        st.markdown(f"**{len(ds_df)} item** terdeteksi dead stock (> {ds_days} hari tidak laku).")
+        if not ds_df.empty:
+            # Metric cards
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("Total item", f"{len(ds_df):,}")
+            with c2:
+                st.metric("Total QTY (lifetime)", f"{int(ds_df['LIFETIME_QTY'].sum()):,}")
+            with c3:
+                st.metric("Total Revenue (lifetime)", _format_rp(ds_df['LIFETIME_REVENUE'].sum()))
+            with c4:
+                urgent = (ds_df['DAYS_SINCE_SALE'] > 90).sum()
+                st.metric("🔴 Kritis (>90h)", f"{urgent:,}")
+            st.dataframe(ds_df, use_container_width=True, hide_index=True, height=400)
+            # Distribusi days_since_sale
+            fig = px.histogram(
+                ds_df, x="DAYS_SINCE_SALE", nbins=20,
+                title=f"Distribusi hari sejak transaksi terakhir (threshold = {ds_days} hari)",
+                labels={"DAYS_SINCE_SALE": "Hari sejak transaksi terakhir"},
+            )
+            fig.add_vline(x=ds_days, line_dash="dash", line_color="red", annotation_text=f"Threshold {ds_days}h")
+            fig.update_layout(height=350)
+            st.plotly_chart(fig, use_container_width=True)
+            st.download_button(
+                "📥 Download Dead Stock (Excel)",
+                data=to_excel_bytes({"Dead_Stock": ds_df}),
+                file_name=f"dead_stock_{ds_days}h.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_dead",
+            )
+        else:
+            st.info(f"🎉 Tidak ada dead stock (> {ds_days} hari tidak laku). Semua item masih aktif!")
+
+    # ---------- Sub-tab 3: Rekomendasi Promosi ----------
+    with strat_tabs[2]:
+        st.caption(
+            "4 strategi promosi berbasis data. Setiap item direkomendasikan dengan "
+            "**alasan** dan **saran aksi** konkret."
+        )
+        pr_col1, pr_col2, pr_col3 = st.columns(3)
+        with pr_col1:
+            pr_margin = st.number_input(
+                "Min margin % (clearance)", 10.0, 90.0, 30.0, 5.0, key="pr_mar"
+            )
+        with pr_col2:
+            pr_qty = st.number_input(
+                "Max qty/hari (clearance)", 0.1, 5.0, 1.0, 0.1, key="pr_qty", format="%.1f"
+            )
+        with pr_col3:
+            pr_momentum = st.number_input(
+                "Min kenaikan % (momentum)", 10, 500, 50, 10, key="pr_mom"
+            )
+        pr_top = st.slider("Tampilkan top N per strategi", 5, 100, 20, 5, key="pr_top")
+        pr_cost_pct = st.number_input(
+            "Asumsi biaya (% dari harga jual, untuk hitung margin)",
+            10, 80, 30, 5, key="pr_cost",
+            help="Default 30%. Sesuaikan dengan bisnis Anda."
+        )
+        with st.spinner("⏳ Menganalisa 4 strategi promosi..."):
+            pr_data = a.promo_recommendations(
+                cost_pct_assumption=pr_cost_pct,
+                clearance_min_margin_pct=pr_margin,
+                clearance_max_avg_daily_qty=pr_qty,
+                momentum_increase_pct=pr_momentum,
+                top_n_per_strategy=pr_top,
+            )
+        promo_tabs = st.tabs([
+            "🧹 Clearance (slow + high margin)",
+            "🚀 Momentum (trending up)",
+            "🛒 Cross-sell (market basket)",
+            "📅 Musiman (seasonal)",
+        ])
+        strat_titles = {
+            "clearance": "Clearance: slow-moving + margin tinggi → Diskon / Bundle",
+            "momentum": "Momentum: QTY naik signifikan → Pertahankan + tambah stok",
+            "basket": "Cross-sell: item komplementer best-seller → Bundle combo",
+            "seasonal": "Musiman: pola peak/off months → Stok + promo terjadwal",
+        }
+        for i, strat in enumerate(["clearance", "momentum", "basket", "seasonal"]):
+            with promo_tabs[i]:
+                df = pr_data.get(strat, pd.DataFrame())
+                st.markdown(f"**{strat_titles[strat]}**")
+                st.markdown(f"**{len(df)} item** masuk strategi ini.")
+                if df.empty:
+                    st.info("Tidak ada item yang memenuhi kriteria strategi ini.")
+                else:
+                    st.dataframe(df, use_container_width=True, hide_index=True, height=400)
+        st.markdown("---")
+        # Download semua strategi dalam 1 file Excel
+        sheets_to_dl = {f"{s}_{strat_titles[s].split(':')[0]}": pr_data.get(s, pd.DataFrame())
+                        for s in ["clearance", "momentum", "basket", "seasonal"]}
+        st.download_button(
+            "📥 Download Semua Rekomendasi (1 Excel, 4 sheet)",
+            data=to_excel_bytes(sheets_to_dl),
+            file_name="rekomendasi_promosi.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_promo",
+        )
 
 # Footer
 st.markdown("---")

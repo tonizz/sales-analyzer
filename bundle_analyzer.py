@@ -17,6 +17,7 @@ Cara pakai:
 import argparse
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 # Kolom wajib yang harus ada di file input
@@ -767,6 +768,507 @@ class BundleAnalyzer:
             per_loc_df = per_loc_df[cols]
         per_loc_df = per_loc_df.sort_values("Bundle_Margin", ascending=False).reset_index(drop=True)
         return summary, per_loc_df, data_quality
+
+    # ===== STRATEGI PENJUALAN =====
+    def slow_moving_items(
+        self,
+        view: str = "all",
+        floocd: str | None = None,
+        start=None, end=None,
+        bottom_pct: float = 20.0,
+        fixed_threshold: float = 0.5,
+        decline_pct: float = 50.0,
+        min_total_qty: int = 1,
+        top_n: int = 50,
+    ) -> dict:
+        """
+        3 view sekaligus untuk identifikasi slow moving items.
+        View: 'bottom_pct' | 'fixed_threshold' | 'decline' | 'all'
+        Return: dict {view_name: DataFrame}
+        """
+        if self.df is None:
+            raise ValueError("Data belum dimuat")
+        df = self.filter_df(start, end, floocd)
+        nb = df[~df["IS_BUNDLE"]].copy()
+        if nb.empty:
+            empty = pd.DataFrame(columns=[
+                "PLU", "NAMA_BRG", "FLOCCD", "TOTAL_QTY", "AVG_DAILY_QTY",
+                "LAST_SALE_DATE", "DAYS_SINCE_SALE", "CATEGORY",
+            ])
+            return {v: empty.copy() for v in ("bottom_pct", "fixed_threshold", "decline")}
+        # Hitung per item per lokasi
+        date_max = nb["FDATE"].max()
+        date_min = nb["FDATE"].min()
+        n_days = max((date_max - date_min).days + 1, 1)
+        grp = nb.groupby(["PLU", "NAMA_BRG", "FLOCCD"], as_index=False).agg(
+            TOTAL_QTY=("QTY", "sum"),
+            TOTAL_REVENUE=("LINE_REVENUE", "sum"),
+            LAST_SALE_DATE=("FDATE", "max"),
+            FIRST_SALE_DATE=("FDATE", "min"),
+        )
+        grp["AVG_DAILY_QTY"] = (grp["TOTAL_QTY"] / n_days).round(3)
+        grp["DAYS_SINCE_SALE"] = (date_max - grp["LAST_SALE_DATE"]).dt.days
+        grp = grp[grp["TOTAL_QTY"] >= min_total_qty].copy()
+        result = {}
+        # View 1: bottom_pct
+        if view in ("bottom_pct", "all"):
+            if not grp.empty:
+                cutoff = grp["AVG_DAILY_QTY"].quantile(bottom_pct / 100.0)
+                v1 = grp[grp["AVG_DAILY_QTY"] <= cutoff].copy()
+                v1["CATEGORY"] = v1["AVG_DAILY_QTY"].apply(
+                    lambda x: "Stagnant" if x < 0.05
+                    else "Very Slow" if x < 0.2
+                    else "Slow"
+                )
+                v1 = v1.sort_values("AVG_DAILY_QTY").head(top_n)
+                v1["LAST_SALE_DATE"] = v1["LAST_SALE_DATE"].dt.strftime("%Y-%m-%d")
+                result["bottom_pct"] = v1.reset_index(drop=True)
+            else:
+                result["bottom_pct"] = pd.DataFrame()
+        # View 2: fixed_threshold
+        if view in ("fixed_threshold", "all"):
+            if not grp.empty:
+                v2 = grp[grp["AVG_DAILY_QTY"] < fixed_threshold].copy()
+                v2["CATEGORY"] = v2["AVG_DAILY_QTY"].apply(
+                    lambda x: "Stagnant" if x < 0.05
+                    else "Very Slow" if x < 0.2
+                    else "Slow"
+                )
+                v2 = v2.sort_values("AVG_DAILY_QTY").head(top_n)
+                v2["LAST_SALE_DATE"] = v2["LAST_SALE_DATE"].dt.strftime("%Y-%m-%d")
+                result["fixed_threshold"] = v2.reset_index(drop=True)
+            else:
+                result["fixed_threshold"] = pd.DataFrame()
+        # View 3: decline (butuh minimal 2 periode: paruh pertama vs paruh kedua)
+        if view in ("decline", "all"):
+            if not grp.empty and n_days >= 14:
+                mid_date = date_min + pd.Timedelta(days=n_days // 2)
+                nb2 = nb.copy()
+                nb2["PERIOD"] = np.where(nb2["FDATE"] <= mid_date, "P1", "P2")
+                pivot = nb2.groupby(
+                    ["PLU", "NAMA_BRG", "FLOCCD", "PERIOD"]
+                )["QTY"].sum().unstack(fill_value=0)
+                # Pastikan kedua kolom ada
+                if "P1" not in pivot.columns: pivot["P1"] = 0
+                if "P2" not in pivot.columns: pivot["P2"] = 0
+                pivot = pivot.reset_index()
+                pivot["CHANGE_PCT"] = np.where(
+                    pivot["P1"] > 0,
+                    (pivot["P2"] - pivot["P1"]) / pivot["P1"] * 100,
+                    np.nan,
+                )
+                # hanya tampilkan yang P1>0 (pernah laku) dan turun > threshold
+                v3 = pivot[
+                    (pivot["P1"] > 0) & (pivot["CHANGE_PCT"] < -decline_pct)
+                ].copy()
+                v3 = v3.merge(
+                    grp[["PLU", "NAMA_BRG", "FLOCCD", "TOTAL_QTY",
+                         "AVG_DAILY_QTY", "LAST_SALE_DATE", "DAYS_SINCE_SALE"]],
+                    on=["PLU", "NAMA_BRG", "FLOCCD"], how="left",
+                )
+                v3 = v3.rename(columns={"P1": "QTY_P1", "P2": "QTY_P2"})
+                v3["LAST_SALE_DATE"] = pd.to_datetime(v3["LAST_SALE_DATE"]).dt.strftime("%Y-%m-%d")
+                v3["CHANGE_PCT"] = v3["CHANGE_PCT"].round(2)
+                v3 = v3.sort_values("CHANGE_PCT").head(top_n)
+                v3 = v3[[
+                    "PLU", "NAMA_BRG", "FLOCCD", "TOTAL_QTY", "AVG_DAILY_QTY",
+                    "QTY_P1", "QTY_P2", "CHANGE_PCT", "LAST_SALE_DATE", "DAYS_SINCE_SALE",
+                ]]
+                result["decline"] = v3.reset_index(drop=True)
+            else:
+                result["decline"] = pd.DataFrame()
+        return result
+
+    def dead_stock_items(
+        self,
+        days: int = 60,
+        floocd: str | None = None,
+        start=None, end=None,
+        min_lifetime_qty: int = 1,
+        top_n: int = 100,
+    ) -> pd.DataFrame:
+        """
+        Item yang TIDAK ADA transaksi dalam `days` hari terakhir,
+        tapi pernah laku sebelumnya.
+        Asumsi: gunakan reference date = max(FDATE) di seluruh data
+                (bukan hari ini), supaya konsisten untuk data historis.
+        """
+        if self.df is None:
+            raise ValueError("Data belum dimuat")
+        df = self.filter_df(start, end, floocd)
+        nb = df[~df["IS_BUNDLE"]].copy()
+        if nb.empty:
+            return pd.DataFrame(columns=[
+                "PLU", "NAMA_BRG", "FLOCCD",
+                "LAST_SALE_DATE", "DAYS_SINCE_SALE",
+                "LIFETIME_QTY", "LIFETIME_REVENUE",
+            ])
+        ref_date = nb["FDATE"].max()
+        cutoff = ref_date - pd.Timedelta(days=days)
+        # Lifetime aggregate (seluruh sejarah)
+        lifetime = nb.groupby(["PLU", "NAMA_BRG", "FLOCCD"], as_index=False).agg(
+            LIFETIME_QTY=("QTY", "sum"),
+            LIFETIME_REVENUE=("LINE_REVENUE", "sum"),
+            LAST_SALE_DATE=("FDATE", "max"),
+            FIRST_SALE_DATE=("FDATE", "min"),
+        )
+        # Hanya yang terakhir jual di LUAR window (dead stock)
+        dead = lifetime[
+            (lifetime["LAST_SALE_DATE"] < cutoff) & (lifetime["LIFETIME_QTY"] >= min_lifetime_qty)
+        ].copy()
+        dead["DAYS_SINCE_SALE"] = (ref_date - dead["LAST_SALE_DATE"]).dt.days
+        dead["URGENCY"] = dead["DAYS_SINCE_SALE"].apply(
+            lambda x: "🔴 Kritis (>90h)" if x > 90
+            else "🟠 Tinggi (60-90h)" if x > days
+            else f"🟡 {days}h"
+        )
+        dead = dead.sort_values("DAYS_SINCE_SALE", ascending=False).head(top_n)
+        dead["LAST_SALE_DATE"] = dead["LAST_SALE_DATE"].dt.strftime("%Y-%m-%d")
+        dead["FIRST_SALE_DATE"] = dead["FIRST_SALE_DATE"].dt.strftime("%Y-%m-%d")
+        dead["LIFETIME_REVENUE"] = dead["LIFETIME_REVENUE"].round(0)
+        return dead[[
+            "PLU", "NAMA_BRG", "FLOCCD", "URGENCY",
+            "LAST_SALE_DATE", "DAYS_SINCE_SALE",
+            "FIRST_SALE_DATE", "LIFETIME_QTY", "LIFETIME_REVENUE",
+        ]].reset_index(drop=True)
+
+    def market_basket_pairs(
+        self,
+        top_n_bestsellers: int = 20,
+        top_n_pairs_per_item: int = 5,
+        floocd: str | None = None,
+        start=None, end=None,
+    ) -> pd.DataFrame:
+        """
+        Untuk setiap top-N best-seller item, cari item PALING SERING
+        muncul dalam NOTRAN yang sama (cross-sell candidates).
+        Hanya menghitung item non-bundle di NOTRAN yang ada item best-seller tsb.
+        Return: 1 baris = (best_seller, paired_item) dengan co-occurrence count.
+        """
+        if self.df is None:
+            raise ValueError("Data belum dimuat")
+        df = self.filter_df(start, end, floocd)
+        nb = df[~df["IS_BUNDLE"]].copy()
+        if nb.empty:
+            return pd.DataFrame(columns=[
+                "BESTSELLER_PLU", "BESTSELLER_NAME",
+                "PAIR_PLU", "PAIR_NAME",
+                "CO_OCCURRENCE", "PAIR_TOTAL_QTY",
+            ])
+        # Tentukan top-N bestsellers
+        top = (
+            nb.groupby(["PLU", "NAMA_BRG"], as_index=False)
+            .agg(QTY=("QTY", "sum"))
+            .sort_values("QTY", ascending=False)
+            .head(top_n_bestsellers)
+        )
+        all_notrans = set()
+        for _, row in top.iterrows():
+            mask = (
+                (nb["PLU"].astype(str) == str(row["PLU"]))
+                & (nb["NAMA_BRG"] == row["NAMA_BRG"])
+            )
+            all_notrans.update(nb.loc[mask, "NOTRAN"].unique().tolist())
+        if not all_notrans:
+            return pd.DataFrame(columns=[
+                "BESTSELLER_PLU", "BESTSELLER_NAME",
+                "PAIR_PLU", "PAIR_NAME",
+                "CO_OCCURRENCE", "PAIR_TOTAL_QTY",
+            ])
+        candidates = nb[nb["NOTRAN"].isin(all_notrans)].copy()
+        # Untuk setiap best-seller, hitung pair
+        results = []
+        for _, row in top.iterrows():
+            mask_bs = (
+                (candidates["PLU"].astype(str) == str(row["PLU"]))
+                & (candidates["NAMA_BRG"] == row["NAMA_BRG"])
+            )
+            bs_notrans = candidates.loc[mask_bs, "NOTRAN"].unique()
+            # Ambil item lain (bukan best-seller) dalam NOTRAN yang sama
+            pair_mask = (
+                candidates["NOTRAN"].isin(bs_notrans)
+                & ~mask_bs
+            )
+            if not pair_mask.any():
+                continue
+            pair_agg = (
+                candidates[pair_mask]
+                .groupby(["PLU", "NAMA_BRG"], as_index=False)
+                .agg(
+                    CO_OCCURRENCE=("NOTRAN", "nunique"),
+                    PAIR_TOTAL_QTY=("QTY", "sum"),
+                )
+                .sort_values("CO_OCCURRENCE", ascending=False)
+                .head(top_n_pairs_per_item)
+            )
+            pair_agg["BESTSELLER_PLU"] = row["PLU"]
+            pair_agg["BESTSELLER_NAME"] = row["NAMA_BRG"]
+            results.append(pair_agg)
+        if not results:
+            return pd.DataFrame(columns=[
+                "BESTSELLER_PLU", "BESTSELLER_NAME",
+                "PAIR_PLU", "PAIR_NAME",
+                "CO_OCCURRENCE", "PAIR_TOTAL_QTY",
+            ])
+        out = pd.concat(results, ignore_index=True)
+        out = out.rename(columns={"PLU": "PAIR_PLU", "NAMA_BRG": "PAIR_NAME"})
+        out = out[[
+            "BESTSELLER_PLU", "BESTSELLER_NAME",
+            "PAIR_PLU", "PAIR_NAME",
+            "CO_OCCURRENCE", "PAIR_TOTAL_QTY",
+        ]].sort_values(
+            ["BESTSELLER_PLU", "CO_OCCURRENCE"], ascending=[True, False]
+        ).reset_index(drop=True)
+        return out
+
+    def seasonal_pattern(
+        self,
+        floocd: str | None = None,
+        start=None, end=None,
+        top_n: int = 30,
+        min_months_active: int = 2,
+    ) -> pd.DataFrame:
+        """
+        Deteksi pola musiman (peak vs off months) per item.
+        Menggunakan agregasi QTY per bulan dalam data yang ada.
+        Untuk data 6 bulan: deteksi pola intra-tahun (Q1, Q2, dst).
+        Untuk data >=12 bulan: bisa deteksi pola YoY.
+        Return: DataFrame dengan kolom PEAK_MONTHS, OFF_MONTHS, dll.
+        """
+        if self.df is None:
+            raise ValueError("Data belum dimuat")
+        df = self.filter_df(start, end, floocd)
+        nb = df[~df["IS_BUNDLE"]].copy()
+        if nb.empty:
+            return pd.DataFrame(columns=[
+                "PLU", "NAMA_BRG", "FLOCCD",
+                "ACTIVE_MONTHS", "PEAK_MONTHS", "PEAK_QTY",
+                "OFF_MONTHS", "TOTAL_QTY", "AVG_MONTHLY_QTY",
+            ])
+        nb["YEAR_MONTH"] = nb["FDATE"].dt.to_period("M")
+        grp = nb.groupby(
+            ["PLU", "NAMA_BRG", "FLOCCD", "YEAR_MONTH"], as_index=False
+        )["QTY"].sum()
+        # Untuk setiap item, cari bulan dengan QTY tertinggi (peak)
+        idxmax = grp.groupby(["PLU", "NAMA_BRG", "FLOCCD"])["QTY"].idxmax()
+        peaks = grp.loc[idxmax].copy()
+        peaks = peaks.rename(columns={
+            "YEAR_MONTH": "PEAK_MONTH",
+            "QTY": "PEAK_QTY",
+        })
+        # Hitung total & avg per bulan
+        agg = grp.groupby(["PLU", "NAMA_BRG", "FLOCCD"], as_index=False).agg(
+            TOTAL_QTY=("QTY", "sum"),
+            ACTIVE_MONTHS=("QTY", "count"),
+        )
+        agg["AVG_MONTHLY_QTY"] = (agg["TOTAL_QTY"] / agg["ACTIVE_MONTHS"]).round(2)
+        # Peak month string list (grouped)
+        def peak_month_str(g):
+            if g.empty or g["QTY"].max() <= 0:
+                return "(tidak ada)"
+            peak = g.loc[g["QTY"].idxmax(), "YEAR_MONTH"]
+            return str(peak)
+        peak_str = (
+            grp.groupby(["PLU", "NAMA_BRG", "FLOCCD"])
+            .apply(peak_month_str, include_groups=False)
+            .reset_index(name="PEAK_MONTHS")
+        )
+        # Off months: bulan dengan QTY <= 25% dari peak
+        def off_months(g):
+            if g.empty:
+                return ""
+            mx = g["QTY"].max()
+            if mx == 0:
+                return ""
+            threshold = mx * 0.25
+            off = g[g["QTY"] <= threshold]["YEAR_MONTH"].astype(str).tolist()
+            return ", ".join(off) if off else "(tidak ada)"
+        off_str = (
+            grp.groupby(["PLU", "NAMA_BRG", "FLOCCD"])
+            .apply(off_months, include_groups=False)
+            .reset_index(name="OFF_MONTHS")
+        )
+        # Merge
+        out = agg.merge(
+            peak_str, on=["PLU", "NAMA_BRG", "FLOCCD"], how="left"
+        ).merge(
+            off_str, on=["PLU", "NAMA_BRG", "FLOCCD"], how="left"
+        )
+        out["PEAK_MONTHS"] = out["PEAK_MONTHS"].fillna("(tidak ada)")
+        out["OFF_MONTHS"] = out["OFF_MONTHS"].fillna("(tidak ada)")
+        out = out[out["ACTIVE_MONTHS"] >= min_months_active]
+        out = out[out["TOTAL_QTY"] >= 10]
+        out = out.sort_values("TOTAL_QTY", ascending=False).head(top_n)
+        return out[[
+            "PLU", "NAMA_BRG", "FLOCCD", "ACTIVE_MONTHS",
+            "PEAK_MONTHS", "OFF_MONTHS", "TOTAL_QTY", "AVG_MONTHLY_QTY",
+        ]].reset_index(drop=True)
+
+    def promo_recommendations(
+        self,
+        floocd: str | None = None,
+        start=None, end=None,
+        cost_pct_assumption: float | None = 30.0,
+        clearance_min_margin_pct: float = 30.0,
+        clearance_max_avg_daily_qty: float = 1.0,
+        momentum_increase_pct: float = 50.0,
+        top_n_per_strategy: int = 20,
+    ) -> dict:
+        """
+        4 strategi rekomendasi promosi:
+        1. clearance    : slow-moving + margin tinggi → diskon/bundle
+        2. momentum     : trending up → pertahankan
+        3. basket       : complementary best-sellers (top pairs)
+        4. seasonal     : pola musiman, stok bulan depan
+        Return: dict {strategy: DataFrame, 'meta': {...}}
+        """
+        result = {"meta": {"strategies": ["clearance", "momentum", "basket", "seasonal"]}}
+        if self.df is None:
+            raise ValueError("Data belum dimuat")
+        df = self.filter_df(start, end, floocd)
+        nb = df[~df["IS_BUNDLE"]].copy()
+        if nb.empty:
+            empty_cols = ["PLU", "NAMA_BRG", "FLOCCD", "REASON", "SUGGESTED_ACTION"]
+            return {
+                "clearance": pd.DataFrame(columns=empty_cols),
+                "momentum": pd.DataFrame(columns=empty_cols),
+                "basket": pd.DataFrame(columns=empty_cols),
+                "seasonal": pd.DataFrame(columns=empty_cols),
+                "meta": result["meta"],
+            }
+        date_max = nb["FDATE"].max()
+        date_min = nb["FDATE"].min()
+        n_days = max((date_max - date_min).days + 1, 1)
+        # Hitung margin per baris
+        if cost_pct_assumption is not None:
+            nb["EFF_COST"] = nb["JUALAHIR"] * (cost_pct_assumption / 100.0)
+        elif "PRC_HIP" in nb.columns:
+            nb["EFF_COST"] = nb["PRC_HIP"].fillna(nb["JUALAHIR"] * 0.7)
+        else:
+            nb["EFF_COST"] = nb["JUALAHIR"] * 0.7
+        nb["MARGIN_PCT"] = np.where(
+            nb["JUALAHIR"] > 0,
+            (nb["JUALAHIR"] - nb["EFF_COST"]) / nb["JUALAHIR"] * 100,
+            0,
+        )
+        # Aggregasi per item per lokasi
+        agg = nb.groupby(
+            ["PLU", "NAMA_BRG", "FLOCCD"], as_index=False
+        ).agg(
+            TOTAL_QTY=("QTY", "sum"),
+            TOTAL_REVENUE=("LINE_REVENUE", "sum"),
+            AVG_MARGIN_PCT=("MARGIN_PCT", "mean"),
+            LAST_SALE_DATE=("FDATE", "max"),
+        )
+        agg["AVG_DAILY_QTY"] = (agg["TOTAL_QTY"] / n_days).round(3)
+        agg["DAYS_SINCE_SALE"] = (date_max - agg["LAST_SALE_DATE"]).dt.days
+        agg["AVG_MARGIN_PCT"] = agg["AVG_MARGIN_PCT"].round(2)
+        # STRATEGY 1: clearance
+        clearance = agg[
+            (agg["AVG_DAILY_QTY"] <= clearance_max_avg_daily_qty)
+            & (agg["AVG_MARGIN_PCT"] >= clearance_min_margin_pct)
+            & (agg["TOTAL_QTY"] > 0)
+        ].copy()
+        clearance["REASON"] = (
+            f"Margin tinggi ({clearance_min_margin_pct}%+) tapi lambat laku "
+            f"(<{clearance_max_avg_daily_qty} qty/hari)"
+        )
+        clearance["SUGGESTED_ACTION"] = clearance["AVG_MARGIN_PCT"].apply(
+            lambda m: f"Diskon 15-20% / bundle dengan best-seller" if m >= 50
+            else f"Diskon 10-15% / bundle dengan best-seller" if m >= 35
+            else "Bundle dengan item fast-moving"
+        )
+        clearance = clearance.sort_values("AVG_MARGIN_PCT", ascending=False).head(top_n_per_strategy)
+        result["clearance"] = clearance[[
+            "PLU", "NAMA_BRG", "FLOCCD", "REASON", "SUGGESTED_ACTION",
+            "TOTAL_QTY", "AVG_DAILY_QTY", "AVG_MARGIN_PCT",
+        ]].reset_index(drop=True)
+        # STRATEGY 2: momentum (perubahan QTY P2 vs P1 > threshold)
+        if n_days >= 14:
+            mid_date = date_min + pd.Timedelta(days=n_days // 2)
+            nb2 = nb.copy()
+            nb2["PERIOD"] = np.where(nb2["FDATE"] <= mid_date, "P1", "P2")
+            pivot = nb2.groupby(
+                ["PLU", "NAMA_BRG", "FLOCCD", "PERIOD"]
+            )["QTY"].sum().unstack(fill_value=0)
+            if "P1" not in pivot.columns: pivot["P1"] = 0
+            if "P2" not in pivot.columns: pivot["P2"] = 0
+            pivot = pivot.reset_index()
+            pivot["CHANGE_PCT"] = np.where(
+                pivot["P1"] > 0,
+                (pivot["P2"] - pivot["P1"]) / pivot["P1"] * 100,
+                np.where(pivot["P2"] > 0, 999.0, 0.0),
+            )
+            momentum = pivot[pivot["CHANGE_PCT"] >= momentum_increase_pct].copy()
+            momentum = momentum.merge(
+                agg[["PLU", "NAMA_BRG", "FLOCCD", "TOTAL_REVENUE",
+                     "AVG_MARGIN_PCT", "LAST_SALE_DATE", "DAYS_SINCE_SALE"]],
+                on=["PLU", "NAMA_BRG", "FLOCCD"], how="left",
+            )
+            momentum["REASON"] = (
+                f"QTY naik {momentum_increase_pct:.0f}%+ di paruh kedua periode"
+            )
+            momentum["SUGGESTED_ACTION"] = "Pertahankan momentum, tambah stok, featured display"
+            momentum = momentum.rename(columns={"P1": "QTY_P1", "P2": "QTY_P2"})
+            momentum = momentum.sort_values("CHANGE_PCT", ascending=False).head(top_n_per_strategy)
+            momentum["LAST_SALE_DATE"] = momentum["LAST_SALE_DATE"].dt.strftime("%Y-%m-%d")
+            momentum["CHANGE_PCT"] = momentum["CHANGE_PCT"].round(2)
+            result["momentum"] = momentum[[
+                "PLU", "NAMA_BRG", "FLOCCD", "REASON", "SUGGESTED_ACTION",
+                "QTY_P1", "QTY_P2", "CHANGE_PCT", "TOTAL_REVENUE", "AVG_MARGIN_PCT",
+            ]].reset_index(drop=True)
+        else:
+            result["momentum"] = pd.DataFrame(columns=[
+                "PLU", "NAMA_BRG", "FLOCCD", "REASON", "SUGGESTED_ACTION",
+                "QTY_P1", "QTY_P2", "CHANGE_PCT", "TOTAL_REVENUE", "AVG_MARGIN_PCT",
+            ])
+        # STRATEGY 3: basket
+        try:
+            mb = self.market_basket_pairs(
+                top_n_bestsellers=20, top_n_pairs_per_item=3,
+                floocd=floocd, start=start, end=end,
+            )
+            if not mb.empty:
+                mb["REASON"] = (
+                    "Sering dibeli bersama best-seller dalam 1 transaksi"
+                )
+                mb["SUGGESTED_ACTION"] = (
+                    "Bundle/diskon combo: " + mb["BESTSELLER_NAME"].astype(str) + " + " + mb["PAIR_NAME"].astype(str)
+                )
+                result["basket"] = mb.head(top_n_per_strategy).reset_index(drop=True)
+            else:
+                result["basket"] = pd.DataFrame(columns=[
+                    "PLU", "NAMA_BRG", "FLOCCD", "REASON", "SUGGESTED_ACTION",
+                    "BESTSELLER_NAME", "PAIR_NAME", "CO_OCCURRENCE",
+                ])
+        except Exception:
+            result["basket"] = pd.DataFrame(columns=[
+                "PLU", "NAMA_BRG", "FLOCCD", "REASON", "SUGGESTED_ACTION",
+                "BESTSELLER_NAME", "PAIR_NAME", "CO_OCCURRENCE",
+            ])
+        # STRATEGY 4: seasonal
+        try:
+            ss = self.seasonal_pattern(
+                floocd=floocd, start=start, end=end, top_n=top_n_per_strategy,
+            )
+            if not ss.empty:
+                ss["REASON"] = "Pola musiman: peak di " + ss["PEAK_MONTHS"].astype(str)
+                ss["SUGGESTED_ACTION"] = ss["PEAK_MONTHS"].apply(
+                    lambda p: f"Stok lebih banyak di {p.split(',')[0].strip()}, promo ringan 1-2 minggu sebelum"
+                )
+                ss = ss.rename(columns={"TOTAL_QTY": "LIFETIME_QTY"})
+                result["seasonal"] = ss.reset_index(drop=True)
+            else:
+                result["seasonal"] = pd.DataFrame(columns=[
+                    "PLU", "NAMA_BRG", "FLOCCD", "REASON", "SUGGESTED_ACTION",
+                    "PEAK_MONTHS", "OFF_MONTHS", "LIFETIME_QTY",
+                ])
+        except Exception:
+            result["seasonal"] = pd.DataFrame(columns=[
+                "PLU", "NAMA_BRG", "FLOCCD", "REASON", "SUGGESTED_ACTION",
+                "PEAK_MONTHS", "OFF_MONTHS", "LIFETIME_QTY",
+            ])
+        return result
 
     # ---------- EXPORT ----------
     def export(self, output_path: str, top_n: int = 20) -> str:
