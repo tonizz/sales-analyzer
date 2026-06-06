@@ -1142,13 +1142,20 @@ with tabs[10]:
         sm_top = st.slider("Tampilkan top N", 5, 200, 30, 5, key="sm_top")
 
         with st.spinner("⏳ Menghitung slow moving items..."):
-            sm_data = a.slow_moving_items(
-                view="all",
-                bottom_pct=sm_bottom,
-                fixed_threshold=sm_threshold,
-                decline_pct=sm_decline,
-                top_n=sm_top,
-            )
+            try:
+                sm_data = a.slow_moving_items(
+                    view="all",
+                    bottom_pct=sm_bottom,
+                    fixed_threshold=sm_threshold,
+                    decline_pct=sm_decline,
+                    top_n=sm_top,
+                )
+            except Exception as e:
+                st.error(f"❌ Error di slow_moving_items: {type(e).__name__}: {e}")
+                import traceback
+                with st.expander("🔍 Detail traceback"):
+                    st.code(traceback.format_exc())
+                st.stop()
         sm_view = st.radio(
             "Pilih view:",
             ["bottom_pct", "fixed_threshold", "decline"],
@@ -1198,7 +1205,14 @@ with tabs[10]:
         )
         ds_top = st.slider("Tampilkan top N", 10, 500, 100, 10, key="ds_top")
         with st.spinner(f"⏳ Mencari item yang tidak laku {ds_days} hari..."):
-            ds_df = a.dead_stock_items(days=ds_days, top_n=ds_top)
+            try:
+                ds_df = a.dead_stock_items(days=ds_days, top_n=ds_top)
+            except Exception as e:
+                st.error(f"❌ Error di dead_stock_items: {type(e).__name__}: {e}")
+                import traceback
+                with st.expander("🔍 Detail traceback"):
+                    st.code(traceback.format_exc())
+                st.stop()
         st.markdown(f"**{len(ds_df)} item** terdeteksi dead stock (> {ds_days} hari tidak laku).")
         if not ds_df.empty:
             # Metric cards
@@ -1258,13 +1272,20 @@ with tabs[10]:
             help="Default 30%. Sesuaikan dengan bisnis Anda."
         )
         with st.spinner("⏳ Menganalisa 4 strategi promosi..."):
-            pr_data = a.promo_recommendations(
-                cost_pct_assumption=pr_cost_pct,
-                clearance_min_margin_pct=pr_margin,
-                clearance_max_avg_daily_qty=pr_qty,
-                momentum_increase_pct=pr_momentum,
-                top_n_per_strategy=pr_top,
-            )
+            try:
+                pr_data = a.promo_recommendations(
+                    cost_pct_assumption=pr_cost_pct,
+                    clearance_min_margin_pct=pr_margin,
+                    clearance_max_avg_daily_qty=pr_qty,
+                    momentum_increase_pct=pr_momentum,
+                    top_n_per_strategy=pr_top,
+                )
+            except Exception as e:
+                st.error(f"❌ Error di promo_recommendations: {type(e).__name__}: {e}")
+                import traceback
+                with st.expander("🔍 Detail traceback"):
+                    st.code(traceback.format_exc())
+                st.stop()
         promo_tabs = st.tabs([
             "🧹 Clearance (slow + high margin)",
             "🚀 Momentum (trending up)",

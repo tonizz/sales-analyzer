@@ -816,70 +816,82 @@ class BundleAnalyzer:
         result = {}
         # View 1: bottom_pct
         if view in ("bottom_pct", "all"):
-            if not grp.empty:
-                cutoff = grp["AVG_DAILY_QTY"].quantile(bottom_pct / 100.0)
-                v1 = grp[grp["AVG_DAILY_QTY"] <= cutoff].copy()
-                v1["CATEGORY"] = v1["AVG_DAILY_QTY"].apply(
-                    lambda x: "Stagnant" if x < 0.05
-                    else "Very Slow" if x < 0.2
-                    else "Slow"
-                )
-                v1 = v1.sort_values("AVG_DAILY_QTY").head(top_n)
-                v1["LAST_SALE_DATE"] = v1["LAST_SALE_DATE"].dt.strftime("%Y-%m-%d")
-                result["bottom_pct"] = v1.reset_index(drop=True)
-            else:
+            try:
+                if not grp.empty:
+                    cutoff = grp["AVG_DAILY_QTY"].quantile(bottom_pct / 100.0)
+                    v1 = grp[grp["AVG_DAILY_QTY"] <= cutoff].copy()
+                    v1["CATEGORY"] = v1["AVG_DAILY_QTY"].apply(
+                        lambda x: "Stagnant" if x < 0.05
+                        else "Very Slow" if x < 0.2
+                        else "Slow"
+                    )
+                    v1 = v1.sort_values("AVG_DAILY_QTY").head(top_n)
+                    v1["LAST_SALE_DATE"] = v1["LAST_SALE_DATE"].dt.strftime("%Y-%m-%d")
+                    result["bottom_pct"] = v1.reset_index(drop=True)
+                else:
+                    result["bottom_pct"] = pd.DataFrame()
+            except Exception:
                 result["bottom_pct"] = pd.DataFrame()
         # View 2: fixed_threshold
         if view in ("fixed_threshold", "all"):
-            if not grp.empty:
-                v2 = grp[grp["AVG_DAILY_QTY"] < fixed_threshold].copy()
-                v2["CATEGORY"] = v2["AVG_DAILY_QTY"].apply(
-                    lambda x: "Stagnant" if x < 0.05
-                    else "Very Slow" if x < 0.2
-                    else "Slow"
-                )
-                v2 = v2.sort_values("AVG_DAILY_QTY").head(top_n)
-                v2["LAST_SALE_DATE"] = v2["LAST_SALE_DATE"].dt.strftime("%Y-%m-%d")
-                result["fixed_threshold"] = v2.reset_index(drop=True)
-            else:
+            try:
+                if not grp.empty:
+                    v2 = grp[grp["AVG_DAILY_QTY"] < fixed_threshold].copy()
+                    v2["CATEGORY"] = v2["AVG_DAILY_QTY"].apply(
+                        lambda x: "Stagnant" if x < 0.05
+                        else "Very Slow" if x < 0.2
+                        else "Slow"
+                    )
+                    v2 = v2.sort_values("AVG_DAILY_QTY").head(top_n)
+                    v2["LAST_SALE_DATE"] = v2["LAST_SALE_DATE"].dt.strftime("%Y-%m-%d")
+                    result["fixed_threshold"] = v2.reset_index(drop=True)
+                else:
+                    result["fixed_threshold"] = pd.DataFrame()
+            except Exception:
                 result["fixed_threshold"] = pd.DataFrame()
         # View 3: decline (butuh minimal 2 periode: paruh pertama vs paruh kedua)
         if view in ("decline", "all"):
-            if not grp.empty and n_days >= 14:
-                mid_date = date_min + pd.Timedelta(days=n_days // 2)
-                nb2 = nb.copy()
-                nb2["PERIOD"] = np.where(nb2["FDATE"] <= mid_date, "P1", "P2")
-                pivot = nb2.groupby(
-                    ["PLU", "NAMA_BRG", "FLOCCD", "PERIOD"]
-                )["QTY"].sum().unstack(fill_value=0)
-                # Pastikan kedua kolom ada
-                if "P1" not in pivot.columns: pivot["P1"] = 0
-                if "P2" not in pivot.columns: pivot["P2"] = 0
-                pivot = pivot.reset_index()
-                pivot["CHANGE_PCT"] = np.where(
-                    pivot["P1"] > 0,
-                    (pivot["P2"] - pivot["P1"]) / pivot["P1"] * 100,
-                    np.nan,
-                )
-                # hanya tampilkan yang P1>0 (pernah laku) dan turun > threshold
-                v3 = pivot[
-                    (pivot["P1"] > 0) & (pivot["CHANGE_PCT"] < -decline_pct)
-                ].copy()
-                v3 = v3.merge(
-                    grp[["PLU", "NAMA_BRG", "FLOCCD", "TOTAL_QTY",
-                         "AVG_DAILY_QTY", "LAST_SALE_DATE", "DAYS_SINCE_SALE"]],
-                    on=["PLU", "NAMA_BRG", "FLOCCD"], how="left",
-                )
-                v3 = v3.rename(columns={"P1": "QTY_P1", "P2": "QTY_P2"})
-                v3["LAST_SALE_DATE"] = pd.to_datetime(v3["LAST_SALE_DATE"]).dt.strftime("%Y-%m-%d")
-                v3["CHANGE_PCT"] = v3["CHANGE_PCT"].round(2)
-                v3 = v3.sort_values("CHANGE_PCT").head(top_n)
-                v3 = v3[[
-                    "PLU", "NAMA_BRG", "FLOCCD", "TOTAL_QTY", "AVG_DAILY_QTY",
-                    "QTY_P1", "QTY_P2", "CHANGE_PCT", "LAST_SALE_DATE", "DAYS_SINCE_SALE",
-                ]]
-                result["decline"] = v3.reset_index(drop=True)
-            else:
+            try:
+                if not grp.empty and n_days >= 14:
+                    mid_date = date_min + pd.Timedelta(days=n_days // 2)
+                    nb2 = nb.copy()
+                    # Pastikan FDATE datetime (defensive untuk pandas version berbeda)
+                    nb2["FDATE"] = pd.to_datetime(nb2["FDATE"])
+                    nb2["PERIOD"] = np.where(nb2["FDATE"] <= mid_date, "P1", "P2")
+                    pivot = nb2.groupby(
+                        ["PLU", "NAMA_BRG", "FLOCCD", "PERIOD"]
+                    )["QTY"].sum().unstack(fill_value=0)
+                    # Pastikan kedua kolom ada
+                    if "P1" not in pivot.columns: pivot["P1"] = 0
+                    if "P2" not in pivot.columns: pivot["P2"] = 0
+                    pivot = pivot.reset_index()
+                    pivot["CHANGE_PCT"] = np.where(
+                        pivot["P1"] > 0,
+                        (pivot["P2"] - pivot["P1"]) / pivot["P1"] * 100,
+                        np.nan,
+                    )
+                    # hanya tampilkan yang P1>0 (pernah laku) dan turun > threshold
+                    v3 = pivot[
+                        (pivot["P1"] > 0) & (pivot["CHANGE_PCT"] < -decline_pct)
+                    ].copy()
+                    v3 = v3.merge(
+                        grp[["PLU", "NAMA_BRG", "FLOCCD", "TOTAL_QTY",
+                             "AVG_DAILY_QTY", "LAST_SALE_DATE", "DAYS_SINCE_SALE"]],
+                        on=["PLU", "NAMA_BRG", "FLOCCD"], how="left",
+                    )
+                    v3 = v3.rename(columns={"P1": "QTY_P1", "P2": "QTY_P2"})
+                    v3["LAST_SALE_DATE"] = pd.to_datetime(v3["LAST_SALE_DATE"]).dt.strftime("%Y-%m-%d")
+                    v3["CHANGE_PCT"] = v3["CHANGE_PCT"].round(2)
+                    v3 = v3.sort_values("CHANGE_PCT").head(top_n)
+                    v3 = v3[[
+                        "PLU", "NAMA_BRG", "FLOCCD", "TOTAL_QTY", "AVG_DAILY_QTY",
+                        "QTY_P1", "QTY_P2", "CHANGE_PCT", "LAST_SALE_DATE", "DAYS_SINCE_SALE",
+                    ]]
+                    result["decline"] = v3.reset_index(drop=True)
+                else:
+                    result["decline"] = pd.DataFrame()
+            except Exception:
+                result["decline"] = pd.DataFrame()
                 result["decline"] = pd.DataFrame()
         return result
 
