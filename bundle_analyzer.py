@@ -806,6 +806,10 @@ class BundleAnalyzer:
             LAST_SALE_DATE=("FDATE", "max"),
             FIRST_SALE_DATE=("FDATE", "min"),
         )
+        # Defensive: pastikan kolom tanggal jadi datetime (beberapa pandas version
+        # return object dtype setelah groupby agg, sehingga .dt.days error)
+        grp["LAST_SALE_DATE"] = pd.to_datetime(grp["LAST_SALE_DATE"])
+        grp["FIRST_SALE_DATE"] = pd.to_datetime(grp["FIRST_SALE_DATE"])
         grp["AVG_DAILY_QTY"] = (grp["TOTAL_QTY"] / n_days).round(3)
         grp["DAYS_SINCE_SALE"] = (date_max - grp["LAST_SALE_DATE"]).dt.days
         grp = grp[grp["TOTAL_QTY"] >= min_total_qty].copy()
@@ -912,6 +916,8 @@ class BundleAnalyzer:
             LAST_SALE_DATE=("FDATE", "max"),
             FIRST_SALE_DATE=("FDATE", "min"),
         )
+        lifetime["LAST_SALE_DATE"] = pd.to_datetime(lifetime["LAST_SALE_DATE"])
+        lifetime["FIRST_SALE_DATE"] = pd.to_datetime(lifetime["FIRST_SALE_DATE"])
         # Hanya yang terakhir jual di LUAR window (dead stock)
         dead = lifetime[
             (lifetime["LAST_SALE_DATE"] < cutoff) & (lifetime["LIFETIME_QTY"] >= min_lifetime_qty)
@@ -1160,6 +1166,7 @@ class BundleAnalyzer:
             AVG_MARGIN_PCT=("MARGIN_PCT", "mean"),
             LAST_SALE_DATE=("FDATE", "max"),
         )
+        agg["LAST_SALE_DATE"] = pd.to_datetime(agg["LAST_SALE_DATE"])
         agg["AVG_DAILY_QTY"] = (agg["TOTAL_QTY"] / n_days).round(3)
         agg["DAYS_SINCE_SALE"] = (date_max - agg["LAST_SALE_DATE"]).dt.days
         agg["AVG_MARGIN_PCT"] = agg["AVG_MARGIN_PCT"].round(2)
