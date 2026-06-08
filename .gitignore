@@ -28,9 +28,11 @@ desktop.ini
 # Test artifacts
 *.tmp
 *.bak
+tmp_*.py
 
 # Excel file sumber (data contoh, jangan di-commit)
 DBKSTHN_*.xlsx
+stock & sales all*.xlsx
 
 # Output bundle analysis
 bundle_analysis*.xlsx
