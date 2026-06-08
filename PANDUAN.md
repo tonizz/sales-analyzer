@@ -777,4 +777,296 @@ for strat in ["clearance", "momentum", "basket", "seasonal"]:
 
 ---
 
+---
+
+## 15. MULTI-YEAR ANALYZER (YoY, Seasonal, Forecast)
+
+Tools analisa multi-tahun untuk data DBKSTHN. File terpisah: `bundle_analyzer_multi.py`. Halaman Streamlit: `pages/2_YoY_Forecast.py` (muncul di sidebar setelah deploy).
+
+### 15.1 Cara pakai di web
+
+1. Buka sidebar → klik **"YoY & Forecast"**
+2. Set **"Jumlah tahun"** sesuai data yang dimiliki (2-4 tahun)
+3. Upload file Excel per tahun (atau biarkan default dari `D:\scr`)
+4. Klik **"🚀 Proses Multi-Tahun"**
+5. Explore **9 tab** analisa (lihat 15.3)
+
+### 15.2 Cara pakai Python
+
+```python
+from bundle_analyzer_multi import MultiYearAnalyzer
+
+# N tahun (2023 s.d. 2026)
+m = MultiYearAnalyzer()
+m.load_years({
+    2023: "DBKSTHN_55_2023.xlsx",
+    2024: "DBKSTHN_55_2024.xlsx",
+    2025: "DBKSTHN_55_2025.xlsx",
+    2026: "DBKSTHN_55_2026.xlsx",
+})
+
+# Export semua analisa ke 1 Excel (17 sheets)
+m.export_excel("multi_year_analysis.xlsx")
+```
+
+Backward compat: `m.load_multi("2025.xlsx", "2026.xlsx")` masih jalan.
+
+### 15.3 Semua Tab (9 tab)
+
+| # | Tab | Metode | Fungsi |
+|---|---|---|---|
+| 1 | 📋 Ringkasan YoY | `yoy_summary()` | Side-by-side semua tahun (Jan–May) + Growth % |
+| 2 | 📍 YoY per Lokasi | `yoy_by_location()` | Growth per FLOCCD untuk semua tahun |
+| 3 | 📈 Seasonal | `seasonal_monthly()` | Seasonal Index rata-rata multi-tahun |
+| 4 | 🔮 Forecast | `forecast_aggregate()` | Linear Regression per lokasi, prediksi 6 bln |
+| 5 | 💾 Export | `export_excel()` | Download 17-sheet Excel |
+| 6 | 🔥 Pareto & Heatmap | `pareto_analysis()`, `calendar_heatmap()` | 80/20 PLU + heatmap revenue harian |
+| 7 | 📈 Trend | `cumulative_yoy()`, `moving_average()` | Revenue kumulatif + MA 3/6 bln |
+| 8 | 📅 Pattern | `weekday_pattern()`, `bundle_comparison()` | Weekday analysis + bundle vs non-bundle |
+| 9 | ⚠️ Anomaly & Price | `daily_anomalies()`, `price_qty_correlation()` | Z-score outlier + diskon vs QTY |
+
+### 15.4 Revenue NETT (JUMLAH)
+
+Semua revenue di Multi-Year Analyzer menggunakan **NETT** (`JUMLAH`), yaitu `JUALAHIR × QTY − RPDISCOUNT`. JUMLAH sudah merupakan **total net per baris** (bukan per-unit).
+
+| Kolom | Rumus | Keterangan |
+|---|---|---|
+| `LINE_NETT` | `JUMLAH` | Revenue NETT per baris (sudah termasuk QTY) |
+| `LINE_REVENUE` | `JUALAHIR × QTY` | Revenue GROSS (RSP) |
+| `RPDISCOUNT` | `JUALAHIR×QTY × DISCOUNT%/100` | Total diskon dalam rupiah |
+| `DISCOUNT` | (persen) | Diskon dalam persen, bukan rupiah |
+
+Konsistensi: `LINE_NETT = LINE_REVENUE − RPDISCOUNT`
+
+### 15.5 YoY Summary
+
+Membandingkan metrik **Januari–Mei** untuk setiap tahun yang tersedia. Growth dihitung untuk setiap pasangan tahun berurutan.
+
+| Metrik | Rumus |
+|---|---|
+| Revenue (NETT) | `SUM(JUMLAH)` |
+| Revenue RSP (GROSS) | `SUM(JUALAHIR × QTY)` |
+| Discount (Rp) | `SUM(RPDISCOUNT)` |
+| Discount % | `SUM(RPDISCOUNT) / SUM(JUALAHIR×QTY) × 100` |
+| Jumlah Transaksi | `NOTRAN.nunique()` |
+| Bundle % | `Bundle_TX / Total_TX × 100` |
+| Rata-rata Item per TX | `mean(count(NOM) per NOTRAN)` |
+| Growth % | `(tahun_ini − tahun_lalu) / tahun_lalu × 100` |
+
+### 15.6 Seasonal Pattern (Multi-Year Average)
+
+Tidak seperti versi sebelumnya yang cuma pakai 2025, sekarang **seasonal index = rata-rata dari SEMUA tahun**. Misal 4 tahun data → seasonal index bulan Jan = rata-rata revenue Jan 2023, 2024, 2025, 2026.
+
+```
+Seasonal Index = Revenue(bulan) / Rata-rata Revenue (12 bulan)
+```
+
+- Index > 1.0 = peak season
+- Index < 1.0 = off-peak
+
+### 15.7 Forecast (Linear Regression)
+
+Menggantikan metode ratio sederhana dengan **Linear Regression** (scikit-learn). Untuk setiap lokasi:
+
+- Input: semua bulan dari semua tahun yang tersedia
+- Model: garis lurus `Revenue = a + b × Period`
+- Output: prediksi 6 bulan ke depan + Prev Year Actual
+
+### 15.8 File output Excel
+
+Export menghasilkan 17 sheets:
+`SUMMARY`, `YOY_SUMMARY`, `YOY_BY_LOCATION`, `YOY_TOP_ITEMS`, `SEASONAL`, `SEASONAL_TOP_VARIANCE`, `FORECAST`, `ALL_MONTHLY`, `ALL_MONTHLY_LOC`, `HEATMAP`, `PARETO`, `CUMULATIVE_YOY`, `WEEKDAY`, `MOVING_AVG`, `ANOMALIES`, `PRICE_QTY`, `BUNDLE_COMPARE`.
+
+---
+
+## 16. STOCK & SALES ANALYZER (Multi-Brand)
+
+Tools terpisah untuk menganalisa file **`stock & sales all (4).xlsx`**. File ini punya format berbeda dari DBKSTHN (2 sheet: Penjualan + DBS). File terpisah: `stock_sales_analyzer.py`. Halaman Streamlit: `pages/1_Stock_Sales_Analyzer.py`.
+
+> ⚠️ **TIDAK bisa digabung dengan analyzer utama** (format file beda). Tools ini stand-alone.
+
+### 16.1 Fitur (10 method)
+
+| Method | Fungsi |
+|---|---|
+| `stock_coverage()` | Cakupan stok per lokasi: days of supply, stockout risk |
+| `stockout_risk()` | Deteksi item dengan stok rendah vs rata-rata penjualan |
+| `margin_with_real_cost()` | Margin real dari data COST di sheet DBS |
+| `dead_stock_per_location()` | Dead stock per lokasi × SPV × Brand |
+| `cross_brand_analysis()` | Cross-brand bundle (INTEX + RBO + HERO KIDS) |
+| `reorder_recommendations()` | Item yang perlu re-stock |
+| `discount_audit()` | Audit diskon tidak wajar |
+| `stock_anomalies()` | Anomali stok (negatif, cost negatif, dll) |
+| `export_excel()` | Export 16-sheet Excel |
+
+### 16.2 Data
+
+| Sheet | Baris | Kolom | Brand |
+|---|---|---|---|
+| Penjualan | 18.438 | 20 | INTEX (99,5%), RBO, HERO KIDS |
+| DBS (Stock) | 11.875 | 43 | INTEX, RBO, HERO KIDS |
+
+- **59 lokasi** sales, **123 lokasi** stock
+- **477 PLU** (sales), **750 PLU** (stock)
+- Revenue gross: Rp 210 M (`SELL × QTY`)
+- Cost real: COST mean Rp 168K, RSP mean Rp 797K
+
+### 16.3 Cara pakai
+
+```python
+from stock_sales_analyzer import StockSalesAnalyzer
+s = StockSalesAnalyzer()
+s.load("stock & sales all (4).xlsx")
+s.export_excel("stock_sales_analysis.xlsx")  # 16 sheets
+```
+
+---
+
+## 17. MACHINE LEARNING (Demo)
+
+Dua model ML sederhana untuk pembelajaran. Ada di tab ke-10 YoY & Forecast (`main_ml` → `pages/2_YoY_Forecast.py`).
+
+### 17.1 K-Means Clustering
+
+**Unsupervised learning**: algoritma mencari pola tersembunyi dalam data tanpa diberi tahu jawabannya.
+
+**Cara kerja:**
+1. Pilih fitur: `Total_QTY`, `Total_Revenue`, `Avg_Discount`, `Months_Active`
+2. StandardScaler → normalisasi (semua fitur punya skala sama)
+3. KMeans `n_clusters=4` → bagi PLU ke 4 kelompok berdasarkan kemiripan
+4. Setiap PLU dapat label cluster (0-3)
+
+**Hasil pada data (2025, 599 PLU):**
+
+| Cluster | Label | Jumlah PLU | Karakteristik |
+|---|---|---|---|
+| 0 | Fast Moving | ~231 | QTY tinggi, aktif >6 bulan |
+| 1 | Medium | ~199 | QTY sedang |
+| 2 | High Diskon | ~159 | Diskon rata-rata tinggi |
+| 3 | Slow Moving | ~10 | QTY rendah, aktif ≤3 bulan |
+
+### 17.2 Linear Regression
+
+**Supervised learning**: model belajar dari data historis untuk memprediksi masa depan.
+
+**Cara kerja:**
+1. Input: revenue bulanan dari semua tahun (Period = 0, 1, 2, ...)
+2. Target: Revenue per bulan
+3. Model: `Revenue = a + b × Period` (garis lurus)
+4. Slope (b) = perubahan revenue per bulan (positif = naik, negatif = turun)
+5. Prediksi: lanjutkan garis untuk 6 bulan ke depan
+
+**Output di UI:**
+- Metric **Slope**: Rp X/bln (naik/turun)
+- Chart: actual revenue + trend line + prediksi 6 bulan
+- Intersep + koefisien: bisa dilihat dari slope
+
+### 17.3 Supervised vs Unsupervised
+
+| Aspek | Supervised (Regression) | Unsupervised (Clustering) |
+|---|---|---|
+| Butuh label? | ✅ (target = Revenue) | ❌ (tidak ada label) |
+| Tujuan | Prediksi angka | Kelompokkan data mirip |
+| Contoh | Linear Regression | K-Means |
+| Di app | Tren + forecast | Segmentasi PLU |
+
+---
+
+## 18. ADVANCED ANALYTICS (Detail)
+
+### 18.1 Pareto 80/20
+
+**Method:** `pareto_analysis(year, top_n=50)`
+
+Sortir PLU by revenue descending → hitung persen kumulatif → tandai PLU yang masuk 80% revenue.
+
+**Cara baca:**
+- `Cumulative_Pct` = akumulasi revenue share
+- `Is_Top80` = True jika cumulative ≤ 80%
+- Contoh: dari 50 PLU teratas, mungkin hanya 10-15 yang menyumbang 80% revenue
+
+### 18.2 Calendar Heatmap
+
+**Method:** `calendar_heatmap(year)`
+
+Visualisasi grid: baris = minggu ke-, kolom = hari (Senin-Minggu), warna = revenue.
+
+### 18.3 Cumulative YoY
+
+**Method:** `cumulative_yoy()`
+
+Revenue kumulatif harian untuk semua tahun (Jan–May). Bandingkan pace penjualan: apakah tahun ini lebih cepat mencapai revenue tertentu?
+
+### 18.4 Weekday Pattern
+
+**Method:** `weekday_pattern(year)`
+
+Revenue per hari dalam seminggu. Membantu scheduling: hari apa penjualan tertinggi → staf dan stok lebih banyak.
+
+### 18.5 Moving Average
+
+**Method:** `moving_average()`
+
+3-bulan dan 6-bulan rata-rata bergerak. Menghaluskan noise bulanan untuk melihat tren jangka panjang.
+
+### 18.6 Daily Anomalies
+
+**Method:** `daily_anomalies(year, z_thresh=2.5)`
+
+Z-score outlier detection: `Z = (revenue_hari − mean) / std`. Hari dengan `|Z| > 2.5` = anomali (penjualan jauh di atas/bawah normal).
+
+### 18.7 Price vs QTY Correlation
+
+**Method:** `price_qty_correlation(year, min_qty=5)`
+
+Scatter plot: sumbu X = rata-rata diskon (%), sumbu Y = total QTY. Besar titik = revenue. Apakah diskon tinggi bikin item laku lebih banyak?
+
+### 18.8 Bundle Comparison
+
+**Method:** `bundle_comparison()`
+
+Perbandingan bundle vs non-bundle untuk setiap tahun: Revenue, QTY, TX, Avg Discount, Item per TX.
+
+---
+
+## 19. FILE STRUCTURE (Lengkap)
+
+```
+D:\scr\
+├── bundle_analyzer.py              ← Main analyzer class (28 method) — TIDAK disentuh
+├── bundle_analyzer_web.py          ← Streamlit web app (11 tab utama) — TIDAK disentuh
+├── stock_sales_analyzer.py         ← Stand-alone stock & sales analyzer (BARU, 32 KB)
+├── bundle_analyzer_multi.py        ← Multi-year analyzer (N tahun) (BARU, 550+ baris)
+├── pages/
+│   ├── 1_Stock_Sales_Analyzer.py   ← Streamlit page: Stock Sales (BARU)
+│   └── 2_YoY_Forecast.py           ← Streamlit page: Multi-Year 9 tab (BARU)
+├── scripts/
+│   └── fetch_data.py               ← CLI auto-fetch Google Drive
+├── .streamlit/
+│   └── config.toml                 ← Theme + server config
+├── DBKSTHN_55_2025.xlsx            ← Data 2025 (51.955 rows, 33 FLOCCD) (BARU)
+├── DBKSTHN_55_2026.xlsx            ← Data 2026 (16.337 rows, 19 FLOCCD)
+├── DBKSTHN_55_2024.xlsx            ← Data 2024 (jika ada)
+├── DBKSTHN_55_2023.xlsx            ← Data 2023 (jika ada)
+├── stock & sales all (4).xlsx      ← Multi-brand stock & sales (BARU, 5.6 MB)
+├── PANDUAN.md                      ← Dokumentasi ini
+├── requirements.txt                ← Dependencies
+├── .gitignore
+└── run_web.bat                     ← Shortcut Streamlit
+```
+
+### Deployed URLs
+- **GitHub:** `https://github.com/tonizz/sales-analyzer`
+- **Streamlit Cloud:** `https://sales-analyzer-itx.streamlit.app`
+- **Streamlit di lokal:** `http://localhost:8501`
+
+### Catatan penting
+- `bundle_analyzer.py` dan `bundle_analyzer_web.py` TIDAK BOLEH disentuh (0 diff)
+- Semua kode baru di file terpisah (multi-page via `pages/`)
+- Setiap halaman baru punya auth duplikasi minimal (~20 baris)
+- Untuk problem session cache di Streamlit Cloud: **push saja tidak cukup**, harus **reboot app** (⋮ → Reboot) di https://share.streamlit.io/
+- `scikit-learn` ditambahkan ke requirements.txt untuk ML
+
+---
+
 Dokumentasi ini mencakup semua fitur. Jika ada pertanyaan lebih lanjut atau permintaan fitur baru, silakan hubungi saya.
