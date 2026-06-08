@@ -65,6 +65,9 @@ class MultiYearAnalyzer:
         df = pd.concat([a25.df, a26.df], ignore_index=True)
         df["MONTH"] = df["FDATE"].dt.month
         df["YM"] = df["FDATE"].dt.to_period("M").astype(str)
+        # JUMLAH = total net per baris (JUALAHIR*QTY - RPDISCOUNT), sudah include QTY
+        # RPDISCOUNT = total diskon rupiah per baris (JUALAHIR*QTY * DISCOUNT%/100)
+        df["LINE_NETT"] = df["JUMLAH"]
         self.df_all = df
 
         # Common locations
@@ -76,39 +79,43 @@ class MultiYearAnalyzer:
 
     @staticmethod
     def _revenue_net(df: pd.DataFrame) -> pd.Series:
-        return df["JUMLAH"] * df["QTY"]
+        return df["JUMLAH"]  # JUMLAH sudah total net (= JUALAHIR*QTY - RPDISCOUNT)
 
     @staticmethod
     def _revenue_gross(df: pd.DataFrame) -> pd.Series:
         return df["JUALAHIR"] * df["QTY"]
 
+    @staticmethod
+    def _discount_rp(df: pd.DataFrame) -> pd.Series:
+        return df["RPDISCOUNT"]  # total diskon dalam rupiah per baris
+
     # ========================================================================
     # YOY COMPARISON (Jan-May only)
     # ========================================================================
     def yoy_summary(self) -> pd.DataFrame:
-        """Side-by-side Jan-May 2025 vs Jan-May 2026."""
+        """Side-by-side Jan-May 2025 vs Jan-May 2026. SEMUA revenue = NETT (JUMLAH*QTY)."""
         self._check_loaded()
         mask = lambda df: (df["YEAR"].isin([2025, 2026])) & (df["MONTH"] <= 5)
 
         def _metrics(sub: pd.DataFrame, year: int) -> dict:
             b = sub[sub["IS_BUNDLE"]]
-            rev_n = self._revenue_net(sub).sum()
-            rev_g = self._revenue_gross(sub).sum()
+            rev_n = float(self._revenue_net(sub).sum())
+            rev_g = float(self._revenue_gross(sub).sum())
             n_tx = sub["NOTRAN"].nunique()
             n_b_tx = b["NOTRAN"].nunique() if len(b) > 0 else 0
-            total_disc = float((sub["DISCOUNT"] * sub["QTY"]).sum())
-            total_jual = float((sub["JUALAHIR"] * sub["QTY"]).sum())
+            total_disc = float(self._discount_rp(sub).sum())       # RPDISCOUNT (total rupiah)
+            total_jual = float(self._revenue_gross(sub).sum())     # JUALAHIR*QTY (gross)
             return {
                 "Tahun": year,
-                "Revenue Gross (Rp)": float(rev_g),
-                "Revenue Net (Rp)": float(rev_n),
+                "Revenue (NETT)": rev_n,
+                "Revenue RSP (GROSS)": rev_g,
                 "Discount (Rp)": total_disc,
                 "Discount %": round(total_disc / total_jual * 100, 2) if total_jual > 0 else 0.0,
                 "Jumlah Transaksi": n_tx,
                 "Jumlah Transaksi Bundle": n_b_tx,
                 "Bundle %": round(n_b_tx / n_tx * 100, 2) if n_tx > 0 else 0.0,
                 "Total QTY": int(sub["QTY"].sum()),
-                "Bundle Revenue Net (Rp)": float(self._revenue_net(b).sum()),
+                "Bundle Revenue (NETT)": float(self._revenue_net(b).sum()),
                 "Rata-rata Item per Transaksi": round(sub.groupby("NOTRAN")["NOM"].count().mean(), 2),
             }
 
@@ -140,7 +147,7 @@ class MultiYearAnalyzer:
             sub = df[df["YEAR"] == year]
             b = sub[sub["IS_BUNDLE"]]
             out = sub.groupby("FLOCCD").agg(
-                Revenue=("LINE_REVENUE", "sum"),
+                Revenue=("LINE_NETT", "sum"),
                 QTY=("QTY", "sum"),
                 TX=("NOTRAN", "nunique"),
             )
@@ -181,7 +188,7 @@ class MultiYearAnalyzer:
             df = sub[sub["YEAR"] == year]
             grp = df.groupby(["PLU", "NAMA_BRG"], as_index=False).agg(
                 QTY=("QTY", "sum"),
-                Revenue=("LINE_REVENUE", "sum"),
+                Revenue=("LINE_NETT", "sum"),
             ).sort_values("Revenue", ascending=False).head(top_n)
             grp = grp.add_suffix(f"_{year}")
             grp = grp.rename(columns={f"PLU_{year}": "PLU", f"NAMA_BRG_{year}": "NAMA_BRG"})
@@ -212,7 +219,7 @@ class MultiYearAnalyzer:
         self._check_loaded()
         df = self.df_all[self.df_all["YEAR"] == 2025]
         monthly = df.groupby("MONTH").agg(
-            Revenue=("LINE_REVENUE", "sum"),
+            Revenue=("LINE_NETT", "sum"),
             QTY=("QTY", "sum"),
             TX=("NOTRAN", "nunique"),
         ).reset_index()
@@ -277,7 +284,7 @@ class MultiYearAnalyzer:
             y25 = sub[sub["YEAR"] == 2025]
             y26 = sub[sub["YEAR"] == 2026]
             # Trend factor: 2026 Jan-May / 2025 Jan-May
-            for measure, col in [("Revenue", "LINE_REVENUE"), ("QTY", "QTY")]:
+            for measure, col in [("Revenue", "LINE_NETT"), ("QTY", "QTY")]:
                 s25 = y25[y25["MONTH"] <= 5][col].sum() or 1
                 s26 = y26[y26["MONTH"] <= 5][col].sum()
                 trend = s26 / s25 if s25 > 0 else 1.0
@@ -312,7 +319,7 @@ class MultiYearAnalyzer:
         """Monthly aggregation semua tahun."""
         self._check_loaded()
         monthly = self.df_all.groupby(["YEAR", "MONTH", "YM"], as_index=False).agg(
-            Revenue=("LINE_REVENUE", "sum"),
+            Revenue=("LINE_NETT", "sum"),
             QTY=("QTY", "sum"),
             TX=("NOTRAN", "nunique"),
         ).sort_values(["YEAR", "MONTH"])
@@ -328,7 +335,7 @@ class MultiYearAnalyzer:
         """Monthly aggregation per FLOCCD."""
         self._check_loaded()
         grp = self.df_all.groupby(["YEAR", "MONTH", "YM", "FLOCCD"], as_index=False).agg(
-            Revenue=("LINE_REVENUE", "sum"),
+            Revenue=("LINE_NETT", "sum"),
             QTY=("QTY", "sum"),
             TX=("NOTRAN", "nunique"),
         )
@@ -363,9 +370,7 @@ class MultiYearAnalyzer:
             ("Unique PLU", f"{s25['PLU'].nunique()}", f"{s26['PLU'].nunique()}"),
             ("Periode", f"{s25['FDATE'].min().date()} → {s25['FDATE'].max().date()}",
              f"{s26['FDATE'].min().date()} → {s26['FDATE'].max().date()}"),
-            ("Total Revenue Gross", f"{float(self._revenue_gross(s25).sum()):,.0f}",
-             f"{float(self._revenue_gross(s26).sum()):,.0f}"),
-            ("Total Revenue Net", f"{float(self._revenue_net(s25).sum()):,.0f}",
+            ("Total Revenue (NETT)", f"{float(self._revenue_net(s25).sum()):,.0f}",
              f"{float(self._revenue_net(s26).sum()):,.0f}"),
             ("Total QTY", f"{int(s25['QTY'].sum()):,}", f"{int(s26['QTY'].sum()):,}"),
             ("FLOCCD overlap", f"{len(self._get_common_locs())}", "-"),

@@ -165,13 +165,13 @@ with tab[0]:
     num_cols = yoy.select_dtypes(include=np.number).columns.tolist()
     st.dataframe(yoy, use_container_width=True, hide_index=True, height=400)
 
-    # Highlight metric
-    growth_row = yoy[yoy["Metrik"] == "Revenue Gross (Rp)"]
+    # Highlight metric (NETT)
+    growth_row = yoy[yoy["Metrik"] == "Revenue (NETT)"]
     if not growth_row.empty:
         g = growth_row.iloc[0]["Growth %"]
         g_v = growth_row.iloc[0]["Growth (Rp)"]
         color = "🟢" if g and g > 0 else "🔴"
-        st.metric(f"{color} Pertumbuhan Revenue Gross (Jan–Mei)", f"{g:+.2f}%" if g else "N/A", f"Rp {g_v:,.0f}")
+        st.metric(f"{color} Pertumbuhan Revenue NETT (Jan–Mei)", f"{g:+.2f}%" if g else "N/A", f"Rp {g_v:,.0f}")
 
     st.divider()
     st.markdown("#### YoY Top Items")
