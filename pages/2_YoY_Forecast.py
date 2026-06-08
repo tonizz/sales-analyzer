@@ -157,6 +157,7 @@ tab = st.tabs([
     "📈 Trend (Cumul. & MA)",
     "📅 Pattern (Weekday & Bundle)",
     "⚠️ Anomaly & Price-QTY",
+    "🤖 Machine Learning",
 ])
 
 _bulan_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Des"]
@@ -435,3 +436,126 @@ with tab[8]:
                               "QTY": "Total QTY Terjual"})
     fig2.update_layout(height=450)
     st.plotly_chart(fig2, use_container_width=True)
+
+# --- TAB 10: MACHINE LEARNING ---
+with tab[9]:
+    st.markdown("## 🤖 Machine Learning Demo")
+    st.caption(
+        "Dua model ML sederhana untuk belajar: **K-Means Clustering** (segmentasi PLU) "
+        "dan **Linear Regression** (tren revenue)."
+    )
+    st.divider()
+
+    st.markdown("### 1️⃣ K-Means Clustering — Segmentasi PLU")
+    st.caption(
+        "**Cara kerja**: ML mencari pola tersembunyi dalam data — PLU dengan QTY, revenue, "
+        "dan diskon yang mirip akan dikelompokkan dalam **cluster** yang sama. "
+        "Tanpa ML, kita harus bikin aturan manual (IF QTY>X AND revenue>Y). "
+        "Dengan ML, algoritma belajar sendiri mana yang mirip."
+    )
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        km_year = st.selectbox("Tahun:", [2025, 2026], key="km_year")
+    with c2:
+        km_k = st.slider("Jumlah cluster:", 2, 6, 4, key="km_k")
+
+    with st.spinner("⏳ K-Means clustering..."):
+        try:
+            plu_clust, desc_clust = m.kmeans_segmentation(km_year, km_k)
+        except Exception as e:
+            st.error(f"KMeans error: {e}")
+            st.stop()
+
+    st.markdown("**Ringkasan tiap cluster:**")
+    st.dataframe(desc_clust, use_container_width=True, hide_index=True)
+
+    fig = px.bar(
+        desc_clust, x="Label", y="Total_QTY",
+        color="Label", title="Rata-rata QTY per Cluster",
+        text="Total_QTY",
+    )
+    fig.update_layout(height=300)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("**Visualisasi cluster (Total QTY vs Discount):**")
+    fig2 = px.scatter(
+        plu_clust, x="Total_QTY", y="Avg_Discount",
+        color=plu_clust["Cluster"].astype(str),
+        hover_data=["PLU", "NAMA_BRG", "Total_Revenue", "Months_Active"],
+        title=f"PLU Clusters ({km_year}) — QTY vs Diskon",
+        labels={"Total_QTY": "Total QTY", "Avg_Discount": "Rata Diskon (%)",
+                "Cluster": "Klaster"},
+        opacity=0.6,
+    )
+    fig2.update_layout(height=450)
+    st.plotly_chart(fig2, use_container_width=True)
+
+    cnt = plu_clust["Cluster"].value_counts().sort_index()
+    st.caption(f"Jumlah PLU per cluster: {dict(cnt)}")
+
+    st.divider()
+
+    st.markdown("### 2️⃣ Linear Regression — Tren Revenue Bulanan")
+    st.caption(
+        "**Cara kerja**: ML menarik **garis lurus terbaik** (best-fit line) "
+        "melalui titik-titik revenue bulanan. Garis ini adalah **model** yang sudah "
+        "'belajar' dari data. Slope garis = estimasi kenaikan/penurunan revenue per bulan. "
+        "Model bisa memprediksi 6 bulan ke depan dengan melanjutkan garis tersebut."
+    )
+
+    with st.spinner("⏳ Linear regression..."):
+        try:
+            monthly_ml, fut_pred, slope = m.linear_trend()
+        except Exception as e:
+            st.error(f"LinReg error: {e}")
+            st.stop()
+
+    trend_sign = "📈 naik" if slope > 0 else "📉 turun"
+    st.metric("Slope (perubahan revenue per bulan)",
+              f"{trend_sign} Rp {abs(slope):,.0f}",
+              f"{slope:+.0f}")
+
+    import plotly.graph_objects as go
+    from datetime import datetime
+
+    fig3 = go.Figure()
+    fig3.add_trace(go.Scatter(
+        x=monthly_ml["YM"], y=monthly_ml["Revenue"],
+        mode="lines+markers", name="Actual Revenue", line=dict(color="blue"),
+    ))
+    fig3.add_trace(go.Scatter(
+        x=monthly_ml["YM"], y=monthly_ml["Trend"],
+        mode="lines", name="Trend (Linear Regression)",
+        line=dict(color="red", dash="dash"),
+    ))
+
+    last_ym = monthly_ml["YM"].iloc[-1]
+    _last_dt = datetime.strptime(last_ym + "-01", "%Y-%m-%d") if "-" in last_ym else None
+    if _last_dt:
+        fut_ym = []
+        for i in range(1, 7):
+            m = _last_dt.month + i
+            y = _last_dt.year + (m - 1) // 12
+            m = ((m - 1) % 12) + 1
+            fut_ym.append(f"{y}-{m:02d}")
+    else:
+        fut_ym = [f"F+{i}" for i in range(1, 7)]
+
+    fig3.add_trace(go.Scatter(
+        x=fut_ym, y=fut_pred,
+        mode="lines+markers", name="Prediksi 6 bln",
+        line=dict(color="green", dash="dot"),
+    ))
+    fig3.update_layout(
+        title="Revenue Bulanan + Linear Regression Trend + Prediksi",
+        height=450, xaxis_title="Bulan", yaxis_title="Revenue (NETT)",
+    )
+    st.plotly_chart(fig3, use_container_width=True)
+
+    st.info(
+        "💡 **Ringkasan ML**: "
+        "K-Means otomatis menemukan 4 kelompok PLU dengan pola jual berbeda. "
+        "Linear Regression belajar tren dari data historis dan memprediksi 6 bulan ke depan. "
+        "Keduanya contoh **supervised** (regression — butuh label Y) dan "
+        "**unsupervised** (clustering — tanpa label) learning."
+    )

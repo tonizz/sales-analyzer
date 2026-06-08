@@ -476,6 +476,71 @@ class MultiYearAnalyzer:
         return pd.DataFrame(rows)
 
     # ========================================================================
+    # MACHINE LEARNING
+    # ========================================================================
+    def kmeans_segmentation(self, year: int = 2025, n_clusters: int = 4) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """K-Means clustering: segmentasi PLU berdasarkan pola penjualan.
+
+        Features: Total_QTY, Total_Revenue, Avg_Discount, Months_Active.
+        Output: setiap PLU dapat label cluster (0..n-1) + deskripsi rata-rata tiap cluster.
+        """
+        from sklearn.cluster import KMeans
+        from sklearn.preprocessing import StandardScaler
+
+        self._check_loaded()
+        df = self.df_all[self.df_all["YEAR"] == year]
+        plu = df.groupby(["PLU", "NAMA_BRG"], as_index=False).agg(
+            Total_QTY=("QTY", "sum"),
+            Total_Revenue=("LINE_NETT", "sum"),
+            Avg_Discount=("DISCOUNT", "mean"),
+            Months_Active=("MONTH", "nunique"),
+            TX_Count=("NOTRAN", "nunique"),
+        )
+        feat_cols = ["Total_QTY", "Total_Revenue", "Avg_Discount", "Months_Active"]
+        X = plu[feat_cols].fillna(0)
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        model = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        plu["Cluster"] = model.fit_predict(X_scaled).astype(int)
+
+        # ringkasan tiap cluster
+        desc = plu.groupby("Cluster")[feat_cols + ["TX_Count"]].mean().round(1).reset_index()
+        # label manual
+        def _label(r):
+            q, rev, disc, active = r["Total_QTY"], r["Total_Revenue"], r["Avg_Discount"], r["Months_Active"]
+            if q > plu["Total_QTY"].quantile(0.75) and active > 6:
+                return "🏆 Fast Moving"
+            if active <= 3 and q < plu["Total_QTY"].quantile(0.25):
+                return "🐌 Slow Moving"
+            if disc > plu["Avg_Discount"].quantile(0.75):
+                return "🏷️ High Diskon"
+            return "📦 Medium"
+        desc["Label"] = desc.apply(_label, axis=1)
+        return plu, desc
+
+    def linear_trend(self) -> tuple[pd.DataFrame, np.ndarray, float]:
+        """Linear Regression: tren revenue bulanan + prediksi 6 bulan ke depan.
+
+        Returns: (monthly_df_with_trend, future_predictions, slope_per_month)
+        """
+        from sklearn.linear_model import LinearRegression
+
+        self._check_loaded()
+        monthly = self.all_monthly()
+        monthly["Period"] = range(len(monthly))
+        X = monthly[["Period"]].values
+        y = monthly["Revenue"].values.astype(float)
+        model = LinearRegression()
+        model.fit(X, y)
+        monthly["Trend"] = model.predict(X).round(0)
+        slope = float(model.coef_[0])
+        # future 6 months
+        last = int(monthly["Period"].max())
+        fut_X = np.arange(last + 1, last + 7).reshape(-1, 1)
+        fut_y = model.predict(fut_X).round(0)
+        return monthly, fut_y, slope
+
+    # ========================================================================
     # EXPORT
     # ========================================================================
     def export_excel(self, output_path: str = "multi_year_analysis.xlsx") -> str:
