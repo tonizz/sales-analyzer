@@ -346,6 +346,136 @@ class MultiYearAnalyzer:
         return grp.sort_values(["YEAR", "MONTH", "FLOCCD"]).reset_index(drop=True)
 
     # ========================================================================
+    # ADVANCED ANALYTICS
+    # ========================================================================
+    def calendar_heatmap(self, year: int = 2025) -> pd.DataFrame:
+        """Daily revenue untuk heatmap kalender."""
+        self._check_loaded()
+        df = self.df_all[self.df_all["YEAR"] == year]
+        daily = df.groupby("FDATE", as_index=False).agg(
+            Revenue=("LINE_NETT", "sum"),
+            QTY=("QTY", "sum"),
+            TX=("NOTRAN", "nunique"),
+        )
+        daily["DAY"] = daily["FDATE"].dt.day
+        daily["MONTH"] = daily["FDATE"].dt.month
+        daily["DOW"] = daily["FDATE"].dt.dayofweek
+        daily["WEEK"] = daily["FDATE"].dt.isocalendar().week.astype(int)
+        daily["Bulan"] = daily["MONTH"].apply(self._month_name)
+        return daily
+
+    def pareto_analysis(self, year: int = 2025, top_n: int = 50) -> pd.DataFrame:
+        """Pareto 80/20: top PLU vs revenue share."""
+        self._check_loaded()
+        df = self.df_all[self.df_all["YEAR"] == year]
+        plu = df.groupby(["PLU", "NAMA_BRG"], as_index=False)["LINE_NETT"].sum()
+        plu = plu.sort_values("LINE_NETT", ascending=False).head(top_n).reset_index(drop=True)
+        total = plu["LINE_NETT"].sum()
+        plu["Pct"] = (plu["LINE_NETT"] / total * 100).round(2) if total > 0 else 0
+        plu["Cumulative_Pct"] = plu["Pct"].cumsum().round(2)
+        plu["Is_Top80"] = plu["Cumulative_Pct"] <= 80
+        return plu
+
+    def cumulative_yoy(self) -> pd.DataFrame:
+        """Revenue kumulatif harian Jan–May 2025 vs 2026."""
+        self._check_loaded()
+        mask = self.df_all["MONTH"] <= 5
+        d = self.df_all[mask]
+        daily = d.groupby(["YEAR", "FDATE"], as_index=False).agg(
+            Revenue=("LINE_NETT", "sum"),
+        ).sort_values(["YEAR", "FDATE"])
+        daily["Cumulative"] = daily.groupby("YEAR")["Revenue"].cumsum()
+        piv = daily.pivot(index="FDATE", columns="YEAR",
+                          values=["Revenue", "Cumulative"]).fillna(0)
+        piv.columns = ["Revenue_2025", "Revenue_2026",
+                       "Cumulative_2025", "Cumulative_2026"]
+        piv = piv.reset_index()
+        piv["DOW"] = piv["FDATE"].dt.dayofweek
+        piv["Hari"] = piv["DOW"].map(
+            {0:"Senin",1:"Selasa",2:"Rabu",3:"Kamis",4:"Jumat",5:"Sabtu",6:"Minggu"})
+        return piv
+
+    def weekday_pattern(self, year: int = 2025) -> pd.DataFrame:
+        """Rata-rata revenue per hari dalam seminggu."""
+        self._check_loaded()
+        df = self.df_all[self.df_all["YEAR"] == year].copy()
+        df["DOW"] = df["FDATE"].dt.dayofweek
+        dow = df.groupby("DOW", as_index=False).agg(
+            Revenue=("LINE_NETT", "sum"),
+            QTY=("QTY", "sum"),
+            TX=("NOTRAN", "nunique"),
+        )
+        dow["Hari"] = dow["DOW"].map(
+            {0:"Senin",1:"Selasa",2:"Rabu",3:"Kamis",4:"Jumat",5:"Sabtu",6:"Minggu"})
+        total = dow["Revenue"].sum()
+        dow["Avg_Revenue_Pct"] = (dow["Revenue"] / total * 100).round(2) if total > 0 else 0
+        dow["Avg_Daily_Revenue"] = (dow["Revenue"] / 52).round(0)  # ~52 hari per DOW
+        return dow[["Hari","Revenue","Avg_Daily_Revenue","Avg_Revenue_Pct","QTY","TX"]]
+
+    def moving_average(self) -> pd.DataFrame:
+        """3/6-month moving average dari all_monthly."""
+        self._check_loaded()
+        monthly = self.all_monthly()
+        monthly["MA_3"] = monthly["Revenue"].rolling(3, min_periods=1).mean().round(0)
+        monthly["MA_6"] = monthly["Revenue"].rolling(6, min_periods=1).mean().round(0)
+        return monthly
+
+    def daily_anomalies(self, year: int = 2025, z_thresh: float = 2.5) -> pd.DataFrame:
+        """Deteksi outlier penjualan harian via Z-score."""
+        self._check_loaded()
+        df = self.df_all[self.df_all["YEAR"] == year]
+        daily = df.groupby("FDATE", as_index=False)["LINE_NETT"].sum()
+        daily.columns = ["FDATE", "Revenue"]
+        mean_r = daily["Revenue"].mean()
+        std_r = daily["Revenue"].std()
+        if std_r > 0:
+            daily["Z_Score"] = ((daily["Revenue"] - mean_r) / std_r).round(2)
+            daily["Is_Anomaly"] = daily["Z_Score"].abs() > z_thresh
+        else:
+            daily["Z_Score"] = 0.0
+            daily["Is_Anomaly"] = False
+        daily["Bulan"] = daily["FDATE"].dt.month.apply(self._month_name)
+        daily["DOW"] = daily["FDATE"].dt.dayofweek
+        daily["Hari"] = daily["DOW"].map(
+            {0:"Senin",1:"Selasa",2:"Rabu",3:"Kamis",4:"Jumat",5:"Sabtu",6:"Minggu"})
+        return daily
+
+    def price_qty_correlation(self, year: int = 2025, min_qty: int = 5) -> pd.DataFrame:
+        """Korelasi diskon vs QTY per PLU."""
+        self._check_loaded()
+        df = self.df_all[self.df_all["YEAR"] == year]
+        plu = df.groupby(["PLU", "NAMA_BRG"], as_index=False).agg(
+            QTY=("QTY", "sum"),
+            Revenue=("LINE_NETT", "sum"),
+            Avg_Discount_Pct=("DISCOUNT", "mean"),
+            Avg_Price=("JUALAHIR", "mean"),
+        )
+        plu = plu[plu["QTY"] >= min_qty].reset_index(drop=True)
+        plu["Avg_Disc_Rp"] = plu["Avg_Price"] * plu["Avg_Discount_Pct"] / 100
+        return plu
+
+    def bundle_comparison(self) -> pd.DataFrame:
+        """Bundle vs non-bundle per tahun."""
+        self._check_loaded()
+        rows = []
+        for year in (2025, 2026):
+            sub = self.df_all[self.df_all["YEAR"] == year]
+            for label, cond in [("Bundle", "IS_BUNDLE"), ("Non-Bundle", "not IS_BUNDLE")]:
+                grp = sub.query(cond)
+                if len(grp) == 0:
+                    continue
+                disc_pct = float(grp["DISCOUNT"].mean())
+                rows.append({
+                    "Tahun": year, "Tipe": label,
+                    "Revenue": float(self._revenue_net(grp).sum()),
+                    "QTY": int(grp["QTY"].sum()),
+                    "TX": int(grp["NOTRAN"].nunique()),
+                    "Avg_Discount_Pct": round(disc_pct, 2),
+                    "Item_Per_TX": round(grp.groupby("NOTRAN")["NOM"].count().mean(), 2),
+                })
+        return pd.DataFrame(rows)
+
+    # ========================================================================
     # EXPORT
     # ========================================================================
     def export_excel(self, output_path: str = "multi_year_analysis.xlsx") -> str:
@@ -359,6 +489,14 @@ class MultiYearAnalyzer:
         forecast = self.forecast_aggregate()
         all_m = self.all_monthly()
         all_loc = self.all_monthly_per_loc()
+        heatmap = self.calendar_heatmap(2025)
+        pareto = self.pareto_analysis(2025)
+        cum = self.cumulative_yoy()
+        wd = self.weekday_pattern(2025)
+        ma = self.moving_average()
+        anom = self.daily_anomalies(2025)
+        pq = self.price_qty_correlation(2025)
+        bc = self.bundle_comparison()
 
         # Summary rows
         s25 = self.df_all[self.df_all["YEAR"] == 2025]
@@ -372,6 +510,8 @@ class MultiYearAnalyzer:
              f"{s26['FDATE'].min().date()} → {s26['FDATE'].max().date()}"),
             ("Total Revenue (NETT)", f"{float(self._revenue_net(s25).sum()):,.0f}",
              f"{float(self._revenue_net(s26).sum()):,.0f}"),
+            ("Total Discount", f"{float(self._discount_rp(s25).sum()):,.0f}",
+             f"{float(self._discount_rp(s26).sum()):,.0f}"),
             ("Total QTY", f"{int(s25['QTY'].sum()):,}", f"{int(s26['QTY'].sum()):,}"),
             ("FLOCCD overlap", f"{len(self._get_common_locs())}", "-"),
         ]
@@ -387,6 +527,14 @@ class MultiYearAnalyzer:
             forecast.to_excel(xw, sheet_name="FORECAST", index=False)
             all_m.to_excel(xw, sheet_name="ALL_MONTHLY", index=False)
             all_loc.to_excel(xw, sheet_name="ALL_MONTHLY_LOC", index=False)
+            heatmap.to_excel(xw, sheet_name="HEATMAP", index=False)
+            pareto.to_excel(xw, sheet_name="PARETO", index=False)
+            cum.to_excel(xw, sheet_name="CUMULATIVE_YOY", index=False)
+            wd.to_excel(xw, sheet_name="WEEKDAY", index=False)
+            ma.to_excel(xw, sheet_name="MOVING_AVG", index=False)
+            anom.to_excel(xw, sheet_name="ANOMALIES", index=False)
+            pq.to_excel(xw, sheet_name="PRICE_QTY", index=False)
+            bc.to_excel(xw, sheet_name="BUNDLE_COMPARE", index=False)
         return output_path
 
     # ========================================================================

@@ -153,9 +153,14 @@ tab = st.tabs([
     "📈 Seasonal 2025",
     "🔮 Forecast 2026",
     "💾 Export",
+    "🔥 Pareto & Heatmap",
+    "📈 Trend (Cumul. & MA)",
+    "📅 Pattern (Weekday & Bundle)",
+    "⚠️ Anomaly & Price-QTY",
 ])
 
 _bulan_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Des"]
+_dow_names = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"]
 
 # --- TAB 1: RINGKASAN YOY ---
 with tab[0]:
@@ -297,3 +302,136 @@ with tab[4]:
     ]
     for s, d in sheets:
         st.caption(f"- **{s}**: {d}")
+
+# --- TAB 6: PARETO & HEATMAP ---
+with tab[5]:
+    st.markdown("### 🔥 Pareto 80/20 — Top PLU vs Revenue Share")
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        pareto_n = st.number_input("Jumlah PLU:", 10, 200, 50, key="pareto_n")
+    with col2:
+        pareto_yr = st.selectbox("Tahun:", [2025, 2026], key="pareto_yr")
+    pareto = m.pareto_analysis(pareto_yr, pareto_n)
+    st.dataframe(pareto, use_container_width=True, hide_index=True, height=400)
+    # Bar chart pareto
+    fig = px.bar(pareto.head(20), x="PLU", y="Pct",
+                 color="Is_Top80", title=f"Top 20 PLU — Revenue Share ({pareto_yr})",
+                 text="Pct", color_discrete_map={True: "#2ca02c", False: "#d62728"})
+    fig.update_layout(height=400, xaxis_tickangle=-45)
+    st.plotly_chart(fig, use_container_width=True)
+    # Find 80% threshold
+    top80_count = pareto["Is_Top80"].sum()
+    top80_rev = pareto[pareto["Is_Top80"]]["Pct"].sum()
+    st.info(f"📌 **{top80_count} PLU** (dari {pareto_n} teratas) menyumbang **{top80_rev:.1f}%** revenue")
+
+    st.divider()
+    st.markdown("### 🔥 Calendar Heatmap — Revenue per Hari (2025)")
+    try:
+        heat = m.calendar_heatmap(2025)
+        heat_pivot = heat.pivot_table(
+            index="WEEK", columns="DOW", values="Revenue", aggfunc="sum"
+        ).fillna(0)
+        heat_pivot.columns = _dow_names
+        fig = px.imshow(
+            heat_pivot.values,
+            x=_dow_names,
+            y=heat_pivot.index,
+            color_continuous_scale="Viridis",
+            labels=dict(x="Hari", y="Minggu ke-", color="Revenue"),
+            title="Revenue per Hari (2025)",
+            aspect="auto",
+        )
+        fig.update_layout(height=500)
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Heatmap error: {e}")
+
+# --- TAB 7: TREND ---
+with tab[6]:
+    st.markdown("### 📈 Cumulative Revenue Jan–May 2025 vs 2026")
+    cum = m.cumulative_yoy()
+    fig = px.line(cum, x="FDATE", y=["Cumulative_2025", "Cumulative_2026"],
+                  title="Revenue Kumulatif Harian",
+                  labels={"value": "Revenue", "variable": "Tahun"})
+    fig.update_layout(height=400)
+    st.plotly_chart(fig, use_container_width=True)
+    # Daily bars
+    fig2 = px.bar(cum, x="FDATE", y=["Revenue_2025", "Revenue_2026"],
+                  barmode="group", title="Revenue per Hari (2025 vs 2026)",
+                  labels={"value": "Revenue", "variable": "Tahun"})
+    fig2.update_layout(height=350)
+    st.plotly_chart(fig2, use_container_width=True)
+
+    st.divider()
+    st.markdown("### 📈 Moving Average (3 & 6 Bulan)")
+    ma = m.moving_average()
+    fig3 = px.line(ma, x="YM", y=["Revenue", "MA_3", "MA_6"],
+                   markers=True, title="Monthly Revenue + Moving Average",
+                   labels={"value": "Revenue", "variable": "Measure"})
+    fig3.update_layout(height=400)
+    st.plotly_chart(fig3, use_container_width=True)
+
+# --- TAB 8: PATTERN ---
+with tab[7]:
+    st.markdown("### 📅 Weekday Pattern (2025)")
+    wd_yr = st.selectbox("Tahun:", [2025, 2026], key="wd_yr")
+    wd = m.weekday_pattern(wd_yr)
+    st.dataframe(wd, use_container_width=True, hide_index=True)
+    fig = px.bar(wd, x="Hari", y="Avg_Revenue_Pct",
+                 color="Avg_Revenue_Pct", color_continuous_scale="Blues",
+                 title=f"Distribusi Revenue per Hari ({wd_yr})",
+                 text="Avg_Revenue_Pct",
+                 category_orders={"Hari": _dow_names})
+    fig.update_layout(height=400)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+    st.markdown("### 📅 Bundle vs Non-Bundle per Tahun")
+    bc = m.bundle_comparison()
+    st.dataframe(bc, use_container_width=True, hide_index=True)
+    fig2 = px.bar(bc, x="Tahun", y="Revenue", color="Tipe",
+                  barmode="group", title="Revenue Bundle vs Non-Bundle",
+                  text="Revenue")
+    fig2.update_layout(height=400)
+    st.plotly_chart(fig2, use_container_width=True)
+    # Pie
+    for yr in [2025, 2026]:
+        sub = bc[bc["Tahun"] == yr]
+        fig3 = px.pie(sub, values="Revenue", names="Tipe",
+                      title=f"Revenue Share {yr}",
+                      hole=0.4)
+        fig3.update_layout(height=300)
+        st.plotly_chart(fig3, use_container_width=True)
+
+# --- TAB 9: ANOMALY & PRICE ---
+with tab[8]:
+    st.markdown("### ⚠️ Daily Anomalies (2025)")
+    anom_yr = st.selectbox("Tahun:", [2025, 2026], key="anom_yr")
+    z_th = st.slider("Z-score threshold:", 1.5, 4.0, 2.5, 0.1, key="z_th")
+    anom = m.daily_anomalies(anom_yr, z_th)
+    anom_only = anom[anom["Is_Anomaly"]]
+    st.metric(f"Anomali ditemukan ({anom_yr})", f"{len(anom_only)} hari",
+              f"dari {len(anom)} hari ({len(anom_only)/len(anom)*100:.1f}%)")
+    # Scatter
+    anom["Label"] = anom["Is_Anomaly"].map({True: "Anomali", False: "Normal"})
+    fig = px.scatter(anom, x="FDATE", y="Revenue", color="Label",
+                     size="Revenue", hover_data=["Hari", "Bulan", "Z_Score"],
+                     title=f"Revenue Harian + Anomali ({anom_yr})",
+                     color_discrete_map={"Anomali": "red", "Normal": "blue"})
+    fig.update_layout(height=400)
+    st.plotly_chart(fig, use_container_width=True)
+    if len(anom_only) > 0:
+        st.dataframe(anom_only[["FDATE","Hari","Revenue","Z_Score"]],
+                     use_container_width=True, hide_index=True)
+
+    st.divider()
+    st.markdown("### ⚠️ Price vs QTY Correlation (2025)")
+    pq = m.price_qty_correlation(2025)
+    fig2 = px.scatter(pq, x="Avg_Discount_Pct", y="QTY",
+                      size="Revenue", color="Revenue",
+                      hover_data=["PLU", "NAMA_BRG"],
+                      title="Diskon vs QTY per PLU",
+                      labels={"Avg_Discount_Pct": "Rata-rata Diskon (%)",
+                              "QTY": "Total QTY Terjual"})
+    fig2.update_layout(height=450)
+    st.plotly_chart(fig2, use_container_width=True)
