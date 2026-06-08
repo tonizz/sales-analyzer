@@ -83,65 +83,82 @@ with st.sidebar:
 
 st.title("📅 YoY & Forecast Analyser")
 st.caption(
-    "Bandingkan Jan–Mei 2025 vs 2026, lihat pola musiman 12 bulan penuh, "
-    "forecast Jun–Des 2026."
+    "Bandingkan Jan–Mei antar tahun, lihat pola musiman multi-tahun, "
+    "forecast via linear regression."
 )
 st.divider()
 
-# Upload files
-# First check if files exist in D:\scr
-default_2025 = str(Path(r'D:\scr\DBKSTHN_55_2025.xlsx').resolve()) if Path(r'D:\scr\DBKSTHN_55_2025.xlsx').exists() else None
-default_2026 = str(Path(r'D:\scr\DBKSTHN_55_2026.xlsx').resolve()) if Path(r'D:\scr\DBKSTHN_55_2026.xlsx').exists() else None
+# Upload files — dynamic N years
+st.markdown("**Upload file Excel per tahun:**")
 
-upload_2025 = st.file_uploader("📁 File 2025 (wajib)", type=["xlsx"], key="my_25")
-upload_2026 = st.file_uploader("📁 File 2026 (opsional, pakai default kalau kosong)", type=["xlsx"], key="my_26")
+# Show year inputs dynamically
+if "ny_upload_count" not in st.session_state:
+    st.session_state.ny_upload_count = 2  # default 2
 
-if st.button("🚀 Proses Multi-Tahun", type="primary", key="my_process"):
-    # Save uploaded files
-    tmp_2025 = None
-    tmp_2026 = None
+cols = st.columns([1, 1])
+with cols[0]:
+    st.number_input("Jumlah tahun:", 1, 10, st.session_state.ny_upload_count,
+                    key="ny_n", on_change=lambda: setattr(st.session_state, "ny_upload_count",
+                                                          st.session_state.ny_n))
+with cols[1]:
+    st.caption("Masukkan tahun & upload file untuk setiap tahun.")
+
+uploaded = {}
+default_dirs = {}
+for i in range(st.session_state.ny_upload_count):
+    col_a, col_b = st.columns([1, 3])
+    with col_a:
+        year_val = st.number_input(f"Tahun {i+1}", 2018, 2030, 2023 + i, key=f"ny_yr_{i}")
+    with col_b:
+        uploaded[year_val] = st.file_uploader(f"📁 File {year_val}", type=["xlsx"],
+                                              key=f"ny_file_{i}")
+    # check default
+    default_path = Path(rf'D:\scr\DBKSTHN_55_{year_val}.xlsx')
+    if default_path.exists():
+        default_dirs[year_val] = str(default_path.resolve())
+        st.caption(f"   (default: D:\\scr\\DBKSTHN_55_{year_val}.xlsx)")
+
+if st.button("🚀 Proses Multi-Tahun", type="primary", key="ny_process"):
+    paths = {}
+    tmp_files = []
     try:
-        if upload_2025 is not None:
-            t = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
-            t.write(upload_2025.getvalue())
-            tmp_2025 = t.name
-        else:
-            tmp_2025 = default_2025
-
-        if upload_2026 is not None:
-            t = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
-            t.write(upload_2026.getvalue())
-            tmp_2026 = t.name
-        else:
-            tmp_2026 = default_2026
-
-        if not tmp_2025 or not Path(tmp_2025).exists():
-            st.error("❌ File 2025 wajib diupload atau harus ada di D:\\scr\\DBKSTHN_55_2025.xlsx")
+        for year_val, fobj in uploaded.items():
+            if fobj is not None:
+                t = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+                t.write(fobj.getvalue())
+                paths[year_val] = t.name
+                tmp_files.append(t.name)
+            elif year_val in default_dirs:
+                paths[year_val] = default_dirs[year_val]
+            else:
+                st.warning(f"⚠️ File {year_val} tidak diupload dan tidak ditemukan di default.")
+        if len(paths) < 1:
+            st.error("❌ Minimal 1 file harus tersedia.")
             st.stop()
 
-        with st.spinner("⏳ Load 2025 + 2026, classify, concat..."):
+        with st.spinner(f"⏳ Loading {len(paths)} tahun..."):
             m = MultiYearAnalyzer()
-            m.load_multi(tmp_2025, tmp_2026 or "")
+            m.load_years(paths)
             st.session_state["my_analyzer"] = m
-        st.success(f"✅ Loaded: {len(m.df_all):,} rows ({m.df_all['YEAR'].value_counts().to_dict()})")
+        yr_counts = m.df_all["YEAR"].value_counts().sort_index().to_dict()
+        st.success(f"✅ Loaded: {len(m.df_all):,} rows ({yr_counts})")
         st.rerun()
     except Exception as e:
         st.error(f"❌ Error: {e}")
         st.exception(e)
     finally:
-        for p in (tmp_2025, tmp_2026):
-            if p:
-                try: Path(p).unlink()
-                except: pass
+        for p in tmp_files:
+            try: Path(p).unlink()
+            except: pass
 
 if "my_analyzer" not in st.session_state:
-    st.info("⬆️ Upload file 2025 untuk memulai. File 2026 optional (pakai default dari D:\\scr).")
+    st.info("⬆️ Upload minimal 1 file Excel untuk memulai.")
     st.stop()
 
 m: MultiYearAnalyzer = st.session_state["my_analyzer"]
-st.caption(f"📊 {len(m.df_all):,} rows · "
-           f"2025={len(m.df_all[m.df_all['YEAR']==2025]):,} · "
-           f"2026={len(m.df_all[m.df_all['YEAR']==2026]):,} · "
+yr_info = " · ".join([f"{y}={len(m.df_all[m.df_all['YEAR']==y]):,}"
+                      for y in m.years])
+st.caption(f"📊 {len(m.df_all):,} rows · {yr_info} · "
            f"Lokasi={len(m._get_common_locs())} common")
 
 # ============================================================================
@@ -171,13 +188,16 @@ with tab[0]:
     num_cols = yoy.select_dtypes(include=np.number).columns.tolist()
     st.dataframe(yoy, use_container_width=True, hide_index=True, height=400)
 
-    # Highlight metric (NETT)
+    # Highlight metric (NETT) — cari growth column terakhir
     growth_row = yoy[yoy["Metrik"] == "Revenue (NETT)"]
     if not growth_row.empty:
-        g = growth_row.iloc[0]["Growth %"]
-        g_v = growth_row.iloc[0]["Growth (Rp)"]
+        g_cols = [c for c in yoy.columns if "%" in str(c) and "Growth" in str(c)]
+        rp_cols = [c for c in yoy.columns if "(Rp)" in str(c) and "Growth" in str(c)]
+        g = growth_row.iloc[0][g_cols[-1]] if g_cols else None
+        g_v = growth_row.iloc[0][rp_cols[-1]] if rp_cols else None
         color = "🟢" if g and g > 0 else "🔴"
-        st.metric(f"{color} Pertumbuhan Revenue NETT (Jan–Mei)", f"{g:+.2f}%" if g else "N/A", f"Rp {g_v:,.0f}")
+        label = g_cols[-1].replace(" %","") if g_cols else "Growth"
+        st.metric(f"{color} {label}", f"{g:+.2f}%" if g else "N/A", f"Rp {g_v:,.0f}" if g_v else None)
 
     st.divider()
     st.markdown("#### YoY Top Items")
@@ -239,32 +259,22 @@ with tab[2]:
 
 # --- TAB 4: FORECAST ---
 with tab[3]:
-    st.markdown("### 🔮 Forecast Jun–Des 2026")
+    st.markdown(f"### 🔮 Forecast ({m.years[-1]}+) — Linear Regression per Lokasi")
     st.caption(
-        "Metode: trend 2025→2026 (Jan–Mei) diterapkan ke pola musiman 2025 per lokasi. "
-        "Forecast aggregate per lokasi."
+        "Metode: Linear Regression dari SEMUA tahun data per lokasi. "
+        "Prediksi 6 bulan ke depan dari data terakhir."
     )
     fc = m.forecast_aggregate()
     st.dataframe(fc, use_container_width=True, hide_index=True, height=500)
 
-    # Pivot + chart
     if not fc.empty:
-        rev_fc = fc[fc["Measure"] == "Revenue"].copy()
-        if not rev_fc.empty:
-            # Total per bulan
-            total_rev = rev_fc.groupby("Bulan").agg(
-                {"2025_Actual": "sum", "2026_Forecast": "sum"}
-            ).reset_index()
-            total_rev["Bulan"] = pd.Categorical(
-                total_rev["Bulan"], categories=_bulan_names[5:], ordered=True
-            )
-            total_rev = total_rev.sort_values("Bulan")
-            fig = px.line(
-                total_rev, x="Bulan", y=["2025_Actual", "2026_Forecast"],
-                markers=True, title="Forecast Revenue (Jun–Des 2026) vs 2025 Actual",
-            )
-            fig.update_layout(height=400)
-            st.plotly_chart(fig, use_container_width=True)
+        total_fc = fc.groupby(["Tahun", "Bulan"], as_index=False)["Forecast_Revenue"].sum()
+        total_fc["Label"] = total_fc["Tahun"].astype(str) + " " + total_fc["Bulan"]
+        fig = px.bar(total_fc, x="Label", y="Forecast_Revenue",
+                     color="Tahun", title="Forecast Revenue per Bulan",
+                     text="Forecast_Revenue")
+        fig.update_layout(height=400, xaxis_tickangle=-45)
+        st.plotly_chart(fig, use_container_width=True)
 
 # --- TAB 5: EXPORT ---
 with tab[4]:
@@ -311,7 +321,7 @@ with tab[5]:
     with col1:
         pareto_n = st.number_input("Jumlah PLU:", 10, 200, 50, key="pareto_n")
     with col2:
-        pareto_yr = st.selectbox("Tahun:", [2025, 2026], key="pareto_yr")
+        pareto_yr = st.selectbox("Tahun:", m.years, key="pareto_yr")
     pareto = m.pareto_analysis(pareto_yr, pareto_n)
     st.dataframe(pareto, use_container_width=True, hide_index=True, height=400)
     # Bar chart pareto
@@ -328,7 +338,7 @@ with tab[5]:
     st.divider()
     st.markdown("### 🔥 Calendar Heatmap — Revenue per Hari (2025)")
     try:
-        heat = m.calendar_heatmap(2025)
+        heat = m.calendar_heatmap(m.years[-1])
         heat_pivot = heat.pivot_table(
             index="WEEK", columns="DOW", values="Revenue", aggfunc="sum"
         ).fillna(0)
@@ -339,7 +349,7 @@ with tab[5]:
             y=heat_pivot.index,
             color_continuous_scale="Viridis",
             labels=dict(x="Hari", y="Minggu ke-", color="Revenue"),
-            title="Revenue per Hari (2025)",
+            title=f"Revenue per Hari ({m.years[-1]})",
             aspect="auto",
         )
         fig.update_layout(height=500)
@@ -349,19 +359,22 @@ with tab[5]:
 
 # --- TAB 7: TREND ---
 with tab[6]:
-    st.markdown("### 📈 Cumulative Revenue Jan–May 2025 vs 2026")
+    st.markdown("### 📈 Cumulative Revenue Jan–May — SEMUA Tahun")
     cum = m.cumulative_yoy()
-    fig = px.line(cum, x="FDATE", y=["Cumulative_2025", "Cumulative_2026"],
-                  title="Revenue Kumulatif Harian",
-                  labels={"value": "Revenue", "variable": "Tahun"})
-    fig.update_layout(height=400)
-    st.plotly_chart(fig, use_container_width=True)
-    # Daily bars
-    fig2 = px.bar(cum, x="FDATE", y=["Revenue_2025", "Revenue_2026"],
-                  barmode="group", title="Revenue per Hari (2025 vs 2026)",
-                  labels={"value": "Revenue", "variable": "Tahun"})
-    fig2.update_layout(height=350)
-    st.plotly_chart(fig2, use_container_width=True)
+    cum_cols = [f"Cumulative_{y}" for y in m.years if f"Cumulative_{y}" in cum.columns]
+    rev_cols = [f"Revenue_{y}" for y in m.years if f"Revenue_{y}" in cum.columns]
+    if cum_cols:
+        fig = px.line(cum, x="FDATE", y=cum_cols,
+                      title="Revenue Kumulatif Harian",
+                      labels={"value": "Revenue", "variable": "Tahun"})
+        fig.update_layout(height=400)
+        st.plotly_chart(fig, use_container_width=True)
+    if rev_cols:
+        fig2 = px.bar(cum, x="FDATE", y=rev_cols,
+                      barmode="group", title="Revenue per Hari",
+                      labels={"value": "Revenue", "variable": "Tahun"})
+        fig2.update_layout(height=350)
+        st.plotly_chart(fig2, use_container_width=True)
 
     st.divider()
     st.markdown("### 📈 Moving Average (3 & 6 Bulan)")
@@ -375,7 +388,7 @@ with tab[6]:
 # --- TAB 8: PATTERN ---
 with tab[7]:
     st.markdown("### 📅 Weekday Pattern (2025)")
-    wd_yr = st.selectbox("Tahun:", [2025, 2026], key="wd_yr")
+    wd_yr = st.selectbox("Tahun:", m.years, key="wd_yr")
     wd = m.weekday_pattern(wd_yr)
     st.dataframe(wd, use_container_width=True, hide_index=True)
     fig = px.bar(wd, x="Hari", y="Avg_Revenue_Pct",
@@ -396,7 +409,7 @@ with tab[7]:
     fig2.update_layout(height=400)
     st.plotly_chart(fig2, use_container_width=True)
     # Pie
-    for yr in [2025, 2026]:
+    for yr in m.years:
         sub = bc[bc["Tahun"] == yr]
         fig3 = px.pie(sub, values="Revenue", names="Tipe",
                       title=f"Revenue Share {yr}",
@@ -407,7 +420,7 @@ with tab[7]:
 # --- TAB 9: ANOMALY & PRICE ---
 with tab[8]:
     st.markdown("### ⚠️ Daily Anomalies (2025)")
-    anom_yr = st.selectbox("Tahun:", [2025, 2026], key="anom_yr")
+    anom_yr = st.selectbox("Tahun:", m.years, key="anom_yr")
     z_th = st.slider("Z-score threshold:", 1.5, 4.0, 2.5, 0.1, key="z_th")
     anom = m.daily_anomalies(anom_yr, z_th)
     anom_only = anom[anom["Is_Anomaly"]]
@@ -426,8 +439,8 @@ with tab[8]:
                      use_container_width=True, hide_index=True)
 
     st.divider()
-    st.markdown("### ⚠️ Price vs QTY Correlation (2025)")
-    pq = m.price_qty_correlation(2025)
+    st.markdown(f"### ⚠️ Price vs QTY Correlation ({m.years[-1]})")
+    pq = m.price_qty_correlation(m.years[-1])
     fig2 = px.scatter(pq, x="Avg_Discount_Pct", y="QTY",
                       size="Revenue", color="Revenue",
                       hover_data=["PLU", "NAMA_BRG"],
@@ -455,7 +468,7 @@ with tab[9]:
     )
     c1, c2 = st.columns([1, 1])
     with c1:
-        km_year = st.selectbox("Tahun:", [2025, 2026], key="km_year")
+        km_year = st.selectbox("Tahun:", m.years, key="km_year")
     with c2:
         km_k = st.slider("Jumlah cluster:", 2, 6, 4, key="km_k")
 
