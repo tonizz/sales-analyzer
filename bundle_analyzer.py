@@ -44,16 +44,28 @@ class BundleAnalyzer:
         return self.df
 
     # ---------- CLASSIFY ----------
-    def classify(self, min_items: int = 2, min_discount: float = 0.0) -> pd.DataFrame:
+    def classify(self, min_items: int = 2, min_discount: float = 0.0,
+                 disc_tolerance: float = 1.0) -> pd.DataFrame:
+        """
+        Klasifikasi bundle.
+
+        Args:
+            min_items: Minimal item per NOTRAN untuk dianggap bundle.
+            min_discount: Minimal diskon (%).
+            disc_tolerance: Toleransi selisih DISCOUNT (%) antar item dalam satu NOTRAN.
+                           Default 1.0 artinya beda ≤1% masih dianggap bundle.
+        """
         if self.df is None:
             raise ValueError("Data belum dimuat. Panggil load() dulu.")
         grp = self.df.groupby(["FLOCCD", "NOTRAN"])
         n_items = grp["NOM"].transform("count")
-        n_disc = grp["DISCOUNT"].transform("nunique")
+        disc_min = grp["DISCOUNT"].transform("min")
+        disc_max = grp["DISCOUNT"].transform("max")
+        same_disc = (disc_max - disc_min) <= disc_tolerance
         self.df["BUNDLE_DISC_PCT"] = grp["DISCOUNT"].transform("first").round(2)
         self.df["IS_BUNDLE"] = (
             (n_items >= min_items)
-            & (n_disc == 1)
+            & same_disc
             & (self.df["BUNDLE_DISC_PCT"] >= min_discount)
         )
         # revenue per baris

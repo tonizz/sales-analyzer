@@ -263,7 +263,8 @@ def _format_pct(x) -> str:
     return f"{x:.2f}%"
 
 
-def process_file(uploaded, min_items, min_disc, loc_filter, date_preset, d_from, d_to):
+def process_file(uploaded, min_items, min_disc, loc_filter, date_preset, d_from, d_to,
+                 disc_tol=1.0):
     """Load & classify file, simpan analyzer di session_state.
     `uploaded` bisa Streamlit UploadedFile, BytesIO, atau path string.
     """
@@ -279,7 +280,7 @@ def process_file(uploaded, min_items, min_disc, loc_filter, date_preset, d_from,
     try:
         a = BundleAnalyzer()
         a.load(tmp)
-        a.classify(min_items=min_items, min_discount=min_disc)
+        a.classify(min_items=min_items, min_discount=min_disc, disc_tolerance=disc_tol)
         # Apply location filter
         if loc_filter and loc_filter.strip():
             locs = [x.strip() for x in loc_filter.split(",") if x.strip()]
@@ -350,6 +351,8 @@ with st.sidebar:
     with st.expander("🔧 Filter & Pengaturan", expanded=True):
         min_items = st.number_input("Min item per bundle", 2, 20, 2)
         min_disc = st.number_input("Min discount %", 0.0, 100.0, 0.0, 0.5)
+        disc_tol = st.slider("Toleransi selisih DISCOUNT %", 0.1, 5.0, 1.0, 0.1,
+                             help="Beda diskon antar item dalam 1 NOTRAN ≤ nilai ini masih dianggap bundle")
         loc_filter = st.text_input("FLOCCD filter (pisah koma)", placeholder="mis. 55592, 55733")
         date_preset = st.selectbox("Periode", PRESET_PERIODS)
         d_from, d_to = None, None
@@ -382,7 +385,7 @@ with st.sidebar:
                         with st.spinner("⏳ Memuat & menganalisa data..."):
                             process_file(
                                 io.BytesIO(data_bytes), min_items, min_disc,
-                                loc_filter, date_preset, d_from, d_to,
+                                loc_filter, date_preset, d_from, d_to, disc_tol,
                             )
                         st.success(f"✓ Data ter-fetch! ({len(data_bytes):,} bytes)")
                         st.rerun()
@@ -396,7 +399,7 @@ with st.sidebar:
         if st.button("🚀 Proses Data", type="primary", use_container_width=True):
             try:
                 with st.spinner("⏳ Memuat & menganalisa data..."):
-                    process_file(uploaded, min_items, min_disc, loc_filter, date_preset, d_from, d_to)
+                    process_file(uploaded, min_items, min_disc, loc_filter, date_preset, d_from, d_to, disc_tol)
                 st.success("✓ Data berhasil dimuat!")
                 st.rerun()
             except Exception as e:
