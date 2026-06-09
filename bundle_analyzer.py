@@ -47,13 +47,10 @@ class BundleAnalyzer:
     def classify(self, min_items: int = 2, min_discount: float = 0.0) -> pd.DataFrame:
         if self.df is None:
             raise ValueError("Data belum dimuat. Panggil load() dulu.")
-        grp = self.df.groupby("NOTRAN")
+        grp = self.df.groupby(["FLOCCD", "NOTRAN"])
         n_items = grp["NOM"].transform("count")
         n_disc = grp["DISCOUNT"].transform("nunique")
-        first_disc = grp["DISCOUNT"].first()
-        # bulatkan discount ke 2 desimal supaya robust terhadap float
-        first_disc = first_disc.round(2)
-        self.df["BUNDLE_DISC_PCT"] = self.df["NOTRAN"].map(first_disc)
+        self.df["BUNDLE_DISC_PCT"] = grp["DISCOUNT"].transform("first").round(2)
         self.df["IS_BUNDLE"] = (
             (n_items >= min_items)
             & (n_disc == 1)
