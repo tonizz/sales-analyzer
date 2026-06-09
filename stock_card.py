@@ -272,7 +272,8 @@ class StockCard:
         Output dalam format seperti format_stok.txt:
           LOKASI | NAMALOK | PLU (0-padded) | NAMA_BRG | Stock Awal | TR | KR | UP | BS | sales | Stock
 
-        Jika month=None, ambil bulan terakhir.
+        Hanya menampilkan (PLU, LOKASI) yang benar-benar aktif di bulan tersebut
+        (punya stok atau pernah ada transaksi). Jika month=None, ambil bulan terakhir.
         """
         if self._master is None:
             raise ValueError("Belum load_data().")
@@ -281,6 +282,11 @@ class StockCard:
         df = self._master[self._master["BULAN"] == month].copy()
         if len(df) == 0:
             return pd.DataFrame()
+        # Filter: hanya (PLU, LOKASI) yang punya stok atau ada transaksi di bulan ini
+        activity = (df["STOK_AWAL"] != 0) | (df["EX"] != 0) | (df["TR"] != 0) | \
+                   (df["KELUAR_KR"] != 0) | (df["RUSAK_BS"] != 0) | (df["PAKAI_UP"] != 0) | \
+                   (df["TERJUAL"] != 0) | (df["STOK_AKHIR"] != 0)
+        df = df[activity].copy()
         result = df.copy()
         result["PLU"] = result["PLU"].astype(int).apply(lambda x: f"{x:07d}")
         result = result.rename(columns={
