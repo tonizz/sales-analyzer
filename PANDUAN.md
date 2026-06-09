@@ -1029,7 +1029,49 @@ Perbandingan bundle vs non-bundle untuk setiap tahun: Revenue, QTY, TX, Avg Disc
 
 ---
 
-## 19. FILE STRUCTURE (Lengkap)
+## 19. STOCK CARD (Kartu Stok Bulanan)
+
+Analisa stok per PLU per lokasi per bulan dengan rumus:
+```
+StokAkhir = StokAwal + IN(EX+TR) - OUT(KR+BS+UP) - Terjual(DBKS.QTY)
+```
+
+**Sumber data (3 file):**
+1. **Stok Awal** — file seperti `stok awal januari 2026.xlsx` (kolom: `lokasi, namalokasi, plu, nama_brg, qt_awal`)
+2. **DBU** — file mutasi seperti `DBUTHN_55_2026.xlsx` (kolom: `LOKASI, PLU, JN, QTY, TGL, ...`)
+   - `EX/TR` = barang masuk (stok +)
+   - `KR/BS/UP` = barang keluar (stok -)
+3. **DBKS** — file penjualan seperti `DBKSTHN_55_2026.xlsx` (kolom: `FLOCCD, PLU, QTY, FDATE, ...`)
+
+**Klasifikasi stok:**
+| STOK_AKHIR | STATUS |
+|---|---|
+| < 0 | ⚠️ NEGATIF |
+| = 0 | 🔴 HABIS |
+| 1-2 | 🟠 KRITIS |
+| 3-5 | 🟡 MENIPIS |
+| > 5 | ✅ NORMAL |
+
+**Alerts:**
+- **Stok Negatif** — perlu transfer dari lokasi lain
+- **Stok Menipis** — perlu reorder (threshold diatur di UI)
+- **Dead Stock** — stok > 0 tapi 0 penjualan di N bulan terakhir
+
+**Cara pakai CLI:**
+```powershell
+python stock_card.py --sa "stok awal januari 2026.xlsx" --dbu "DBUTHN_55_2026.xlsx" --dbks "DBKSTHN_55_2026.xlsx" -o hasil.xlsx
+```
+
+**Cara pakai Web:**
+1. Buka Streamlit → "Stock Card" di sidebar
+2. Upload 3 file
+3. Klik "Proses Kartu Stok"
+
+**File:** `stock_card.py`, `pages\3_Stock_Card.py`
+
+---
+
+## 20. FILE STRUCTURE (Lengkap)
 
 ```
 D:\scr\
@@ -1037,9 +1079,11 @@ D:\scr\
 ├── bundle_analyzer_web.py          ← Streamlit web app (11 tab utama) — TIDAK disentuh
 ├── stock_sales_analyzer.py         ← Stand-alone stock & sales analyzer (BARU, 32 KB)
 ├── bundle_analyzer_multi.py        ← Multi-year analyzer (N tahun) (BARU, 550+ baris)
+├── stock_card.py                   ← Stock card analyzer (BARU)
 ├── pages/
 │   ├── 1_Stock_Sales_Analyzer.py   ← Streamlit page: Stock Sales (BARU)
-│   └── 2_YoY_Forecast.py           ← Streamlit page: Multi-Year 9 tab (BARU)
+│   ├── 2_YoY_Forecast.py           ← Streamlit page: Multi-Year 9 tab (BARU)
+│   └── 3_Stock_Card.py             ← Streamlit page: Stock Card (BARU)
 ├── scripts/
 │   └── fetch_data.py               ← CLI auto-fetch Google Drive
 ├── .streamlit/
@@ -1048,6 +1092,8 @@ D:\scr\
 ├── DBKSTHN_55_2026.xlsx            ← Data 2026 (16.337 rows, 19 FLOCCD)
 ├── DBKSTHN_55_2024.xlsx            ← Data 2024 (jika ada)
 ├── DBKSTHN_55_2023.xlsx            ← Data 2023 (jika ada)
+├── DBUTHN_55_2026.xlsx             ← DBU mutasi stok (BARU, 38.656 rows)
+├── stok awal januari 2026.xlsx     ← Stok awal per PLU per lokasi (BARU, 4.445 rows)
 ├── stock & sales all (4).xlsx      ← Multi-brand stock & sales (BARU, 5.6 MB)
 ├── PANDUAN.md                      ← Dokumentasi ini
 ├── requirements.txt                ← Dependencies
