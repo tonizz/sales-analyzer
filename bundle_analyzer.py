@@ -470,14 +470,10 @@ class BundleAnalyzer:
         if df.empty:
             return pd.DataFrame(columns=["KODE LOKASI", "NAMA LOKASI", "TAHUN", "BULAN",
                                           "TOTAL QTY PAKET", "TOTAL QTY SATUAN"])
-        b = df[df["IS_BUNDLE"]]
-        nb = df[~df["IS_BUNDLE"]]
         df["TAHUN"] = df["FDATE"].dt.year
         df["BULAN"] = df["FDATE"].dt.month
-        b["TAHUN"] = b["FDATE"].dt.year
-        b["BULAN"] = b["FDATE"].dt.month
-        nb["TAHUN"] = nb["FDATE"].dt.year
-        nb["BULAN"] = nb["FDATE"].dt.month
+        b = df[df["IS_BUNDLE"]].copy()
+        nb = df[~df["IS_BUNDLE"]].copy()
         bq = b.groupby(["FLOCCD", "FNAMA", "TAHUN", "BULAN"])["QTY"].sum().reset_index(name="TOTAL QTY PAKET")
         nbq = nb.groupby(["FLOCCD", "FNAMA", "TAHUN", "BULAN"])["QTY"].sum().reset_index(name="TOTAL QTY SATUAN")
         result = bq.merge(nbq, on=["FLOCCD", "FNAMA", "TAHUN", "BULAN"], how="outer").fillna(0)
