@@ -574,6 +574,7 @@ with tabs[0]:
         sheets = {"Summary_Lokasi": sm, "Ringkasan_Bulan_Lokasi": msl}
         if not mbd.empty:
             sheets["Detail_Bundle"] = mbd
+        excel = to_excel_bytes(sheets)
         st.download_button(
             "📥 Download Summary (Excel)",
             data=excel,
