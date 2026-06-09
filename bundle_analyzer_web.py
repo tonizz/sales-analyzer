@@ -351,7 +351,12 @@ with st.sidebar:
     with st.expander("🔧 Filter & Pengaturan", expanded=True):
         min_items = st.number_input("Min item per bundle", 2, 20, 2)
         min_disc = st.number_input("Min discount %", 0.0, 100.0, 0.0, 0.5)
-        disc_tol = st.slider("Toleransi selisih DISCOUNT %", 0.1, 5.0, 1.0, 0.1,
+        DISC_TOL_DEFAULT = 1.0
+        if st.button("↺ Reset slider", key="reset_disc_tol", help="Kembalikan ke 1.0"):
+            st.session_state["disc_tol_key"] = DISC_TOL_DEFAULT
+            st.rerun()
+        disc_tol = st.slider("Toleransi selisih DISCOUNT %", 0.1, 5.0, DISC_TOL_DEFAULT, 0.1,
+                             key="disc_tol_key",
                              help="Beda diskon antar item dalam 1 NOTRAN ≤ nilai ini masih dianggap bundle")
         loc_filter = st.text_input("FLOCCD filter (pisah koma)", placeholder="mis. 55592, 55733")
         date_preset = st.selectbox("Periode", PRESET_PERIODS)
