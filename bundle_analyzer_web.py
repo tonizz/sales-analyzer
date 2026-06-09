@@ -544,8 +544,23 @@ with tabs[0]:
         sm_disp = sm.copy()
         st.dataframe(sm_disp, use_container_width=True, hide_index=True, height=400)
 
-        # Download
-        excel = to_excel_bytes({"Summary": sm})
+        # --- Monthly summary ---
+        st.markdown('<div class="section-header">📅 Ringkasan per Bulan</div>', unsafe_allow_html=True)
+        mt = a.monthly_trend()
+        if not mt.empty:
+            mt_disp = mt.copy()
+            mt_disp["Revenue"] = mt_disp["Revenue"].apply(_format_rp)
+            mt_disp["Bundle_Revenue"] = mt_disp["Bundle_Revenue"].apply(_format_rp)
+            st.dataframe(mt_disp, use_container_width=True, hide_index=True)
+            fig_m = px.line(mt, x="YM", y=["Revenue", "Bundle_Revenue"], markers=True,
+                            title="Revenue per Bulan")
+            st.plotly_chart(fig_m, use_container_width=True)
+
+        # Download (multi-sheet)
+        sheets = {"Summary_Lokasi": sm}
+        if not mt.empty:
+            sheets["Summary_Bulan"] = mt
+        excel = to_excel_bytes(sheets)
         st.download_button(
             "📥 Download Summary (Excel)",
             data=excel,
