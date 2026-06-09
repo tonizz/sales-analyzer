@@ -115,8 +115,8 @@ if sc is None or sc._master is None:
 # TAB
 # ============================================================================
 master = sc._master
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
-    "📋 Kartu Stok", "🔢 Ringkasan PLU", "🏪 Ringkasan Lokasi",
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+    "📋 Kartu Stok", "📄 Format Stok", "🔢 Ringkasan PLU", "🏪 Ringkasan Lokasi",
     "📈 Trend", "⚠️ Stok Negatif", "🟡 Stok Menipis",
     "💀 Dead Stock", "🔍 Filter", "📥 Export"
 ])
@@ -130,8 +130,25 @@ with tab1:
     st.dataframe(filtered, use_container_width=True, hide_index=True)
     st.caption(f"{len(filtered)} baris dari {len(df)} total")
 
-# --- TAB 2: Ringkasan PLU ---
+# --- TAB 2: Format Stok ---
 with tab2:
+    st.subheader("Format Stok per Bulan")
+    bulan_list = sorted(master["BULAN"].unique())
+    selected_month = st.selectbox("Pilih Bulan", bulan_list,
+                                  format_func=lambda x: {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"Mei",6:"Jun",
+                                                          7:"Jul",8:"Agu",9:"Sep",10:"Okt",11:"Nov",12:"Des"}.get(x,str(x)),
+                                  index=len(bulan_list)-1)
+    df_fs = sc.format_stok(int(selected_month))
+    if len(df_fs) == 0:
+        st.warning("Tidak ada data untuk bulan ini")
+    else:
+        st.dataframe(df_fs, use_container_width=True, hide_index=True)
+        st.caption(f"{len(df_fs)} baris • {df_fs['LOKASI'].nunique()} lokasi • {df_fs['PLU'].nunique()} PLU")
+        csv = df_fs.to_csv(index=False).encode()
+        st.download_button("⬇️ Download CSV", csv, f"stok_{selected_month}.csv", "text/csv")
+
+# --- TAB 3: Ringkasan PLU ---
+with tab3:
     st.subheader("Ringkasan per PLU")
     df_plu = sc.summarize_by_plu()
     col_sel = st.multiselect("Pilih kolom", df_plu.columns.tolist(),
@@ -150,8 +167,8 @@ with tab2:
     fig2 = px.bar(bot20, x="PLU", y="STOK_AKHIR_TERAKHIR", hover_data=["NAMA_BRG", "TOTAL_TERJUAL"])
     st.plotly_chart(fig2, use_container_width=True)
 
-# --- TAB 3: Ringkasan Lokasi ---
-with tab3:
+# --- TAB 4: Ringkasan Lokasi ---
+with tab4:
     st.subheader("Ringkasan per Lokasi")
     df_lok = sc.summarize_by_lokasi()
     st.dataframe(df_lok, use_container_width=True, hide_index=True)
@@ -160,8 +177,8 @@ with tab3:
                  title="Stok Akhir per Lokasi")
     st.plotly_chart(fig, use_container_width=True)
 
-# --- TAB 4: Trend ---
-with tab4:
+# --- TAB 5: Trend ---
+with tab5:
     st.subheader("Trend Bulanan")
     trend = sc.stock_trend()
     st.dataframe(trend, use_container_width=True, hide_index=True)
@@ -189,8 +206,8 @@ with tab4:
     fig3 = px.pie(pie_df, values="QTY", names="Kategori", title="Komposisi Barang Keluar")
     st.plotly_chart(fig3, use_container_width=True)
 
-# --- TAB 5: Stok Negatif ---
-with tab5:
+# --- TAB 6: Stok Negatif ---
+with tab6:
     st.subheader("⚠️ Stok Negatif")
     ns = sc.negative_stock()
     if len(ns) == 0:
@@ -205,8 +222,8 @@ with tab5:
         st.metric("Lokasi Bermasalah", lok_neg)
         st.metric("Total Defisit", int(abs(ns["STOK_AKHIR"].sum())))
 
-# --- TAB 6: Stok Menipis ---
-with tab6:
+# --- TAB 7: Stok Menipis ---
+with tab7:
     st.subheader("🟡 Stok Menipis")
     threshold = st.number_input("Batas stok menipis (unit)", min_value=1, value=5)
     ls = sc.low_stock(threshold=int(threshold))
@@ -217,8 +234,8 @@ with tab6:
         st.dataframe(ls[["PLU", "NAMA_BRG", "LOKASI", "BULAN_NAMA", "STOK_AWAL", "TERJUAL", "STOK_AKHIR"]],
                      use_container_width=True, hide_index=True)
 
-# --- TAB 7: Dead Stock ---
-with tab7:
+# --- TAB 8: Dead Stock ---
+with tab8:
     st.subheader("💀 Dead Stock")
     min_months = st.number_input("Minimal bulan tanpa penjualan", min_value=1, value=3)
     ds = sc.dead_stock(min_months=int(min_months))
@@ -232,8 +249,8 @@ with tab7:
                      hover_data=["NAMA_BRG", "BULAN_NAMA"], title="Top 30 Dead Stock")
         st.plotly_chart(fig, use_container_width=True)
 
-# --- TAB 8: Filter ---
-with tab8:
+# --- TAB 9: Filter ---
+with tab9:
     st.subheader("🔍 Filter & Cari")
     col1, col2 = st.columns(2)
     with col1:
@@ -260,8 +277,8 @@ with tab8:
     st.dataframe(df, use_container_width=True, hide_index=True)
     st.caption(f"{len(df)} baris")
 
-# --- TAB 9: Export ---
-with tab9:
+# --- TAB 10: Export ---
+with tab10:
     st.subheader("📥 Export Excel")
     if st.button("📥 Download Excel"):
         with st.spinner("Membuat Excel..."):

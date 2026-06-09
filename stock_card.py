@@ -141,15 +141,18 @@ class StockCard:
 
         # --- Build per-bulan with carry-forward ---
         # Pre-index aggregated data for fast lookup
-        in_idx = {}
+        ex_idx = {}
+        tr_idx = {}
         out_idx = {"KR": {}, "BS": {}, "UP": {}}
         terjual_idx = {}
 
         if len(dbu_agg) > 0:
             for _, r in dbu_agg.iterrows():
                 k = (r["PLU"], r["LOKASI"], r["BULAN"])
-                if r["JN"] in JN_IN:
-                    in_idx[k] = in_idx.get(k, 0) + r["QTY"]
+                if r["JN"] == "EX":
+                    ex_idx[k] = ex_idx.get(k, 0) + r["QTY"]
+                elif r["JN"] == "TR":
+                    tr_idx[k] = tr_idx.get(k, 0) + r["QTY"]
                 elif r["JN"] == "KR":
                     out_idx["KR"][k] = out_idx["KR"].get(k, 0) + r["QTY"]
                 elif r["JN"] == "BS":
@@ -169,11 +172,13 @@ class StockCard:
             nama_lok = lokasi_map.get(lokasi, "")
             for bulan in months:
                 k = (plu, lokasi, bulan)
-                masuk = int(in_idx.get(k, 0))
+                ex = int(ex_idx.get(k, 0))
+                tr = int(tr_idx.get(k, 0))
                 kr = int(out_idx["KR"].get(k, 0))
                 bs = int(out_idx["BS"].get(k, 0))
                 up = int(out_idx["UP"].get(k, 0))
                 terjual = int(terjual_idx.get(k, 0))
+                masuk = ex + tr
                 stok_akhir = sa_val + masuk - kr - bs - up - terjual
                 rows.append({
                     "PLU": plu,
@@ -183,6 +188,8 @@ class StockCard:
                     "BULAN": bulan,
                     "BULAN_NAMA": MONTH_NAMES.get(bulan, bulan),
                     "STOK_AWAL": sa_val,
+                    "EX": ex,
+                    "TR": tr,
                     "MASUK": masuk,
                     "KELUAR_KR": kr,
                     "RUSAK_BS": bs,
@@ -221,7 +228,8 @@ class StockCard:
             raise ValueError("Belum load_data().")
         cols = ["PLU", "NAMA_BRG", "LOKASI", "NAMA_LOKASI",
                 "YEAR", "BULAN", "BULAN_NAMA",
-                "STOK_AWAL", "MASUK", "KELUAR_KR", "RUSAK_BS", "PAKAI_UP",
+                "STOK_AWAL", "EX", "TR", "MASUK",
+                "KELUAR_KR", "RUSAK_BS", "PAKAI_UP",
                 "TERJUAL", "STOK_AKHIR", "STATUS"]
         return self._master[cols].sort_values(["LOKASI", "PLU", "BULAN"]).reset_index(drop=True)
 
@@ -258,6 +266,40 @@ class StockCard:
             PLU_MENIPIS=("STOK_AKHIR", lambda x: ((x > 0) & (x <= 5)).sum()),
         ).reset_index()
         return res.sort_values("STOK_AKHIR", ascending=False).reset_index(drop=True)
+
+    def format_stok(self, month: int | None = None) -> pd.DataFrame:
+        """
+        Output dalam format seperti format_stok.txt:
+          LOKASI | NAMALOK | PLU (0-padded) | NAMA_BRG | Stock Awal | TR | KR | UP | BS | sales | Stock
+
+        Jika month=None, ambil bulan terakhir.
+        """
+        if self._master is None:
+            raise ValueError("Belum load_data().")
+        if month is None:
+            month = self._months[-1]
+        df = self._master[self._master["BULAN"] == month].copy()
+        if len(df) == 0:
+            return pd.DataFrame()
+        result = df.copy()
+        result["PLU"] = result["PLU"].astype(int).apply(lambda x: f"{x:07d}")
+        result = result.rename(columns={
+            "NAMA_LOKASI": "NAMALOK",
+            "STOK_AWAL": "Stock Awal",
+            "TR": "TR",
+            "KELUAR_KR": "KR",
+            "PAKAI_UP": "UP",
+            "RUSAK_BS": "BS",
+            "TERJUAL": "sales",
+            "STOK_AKHIR": "Stock",
+        })
+        cols_out = ["LOKASI", "NAMALOK", "PLU", "NAMA_BRG",
+                     "Stock Awal", "TR", "KR", "UP", "BS", "sales", "Stock"]
+        return result[cols_out].sort_values(["LOKASI", "PLU"]).reset_index(drop=True)
+
+    def format_stok_all(self) -> dict[int, pd.DataFrame]:
+        """Return dict {bulan: DataFrame} for all months."""
+        return {b: self.format_stok(b) for b in self._months}
 
     def negative_stock(self) -> pd.DataFrame:
         df = self._master[self._master["STOK_AKHIR"] < 0].copy()
@@ -322,7 +364,13 @@ class StockCard:
 
     def export_excel(self, path: str):
         with pd.ExcelWriter(path, engine="openpyxl") as writer:
-            self.get_stock_card().to_excel(writer, sheet_name="Kartu Stok", index=False)
+            # Satu sheet per bulan dalam format stok
+            for bulan in self._months:
+                bln = MONTH_NAMES.get(bulan, str(bulan))
+                fs = self.format_stok(bulan)
+                if len(fs) > 0:
+                    fs.to_excel(writer, sheet_name=f"Stok {bln}", index=False)
+            self.get_stock_card().to_excel(writer, sheet_name="Kartu Stok Detail", index=False)
             self.summarize_by_plu().to_excel(writer, sheet_name="Ringkasan per PLU", index=False)
             self.summarize_by_lokasi().to_excel(writer, sheet_name="Ringkasan per Lokasi", index=False)
             self.stock_trend().to_excel(writer, sheet_name="Trend Bulanan", index=False)
