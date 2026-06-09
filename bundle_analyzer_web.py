@@ -326,11 +326,11 @@ def to_excel_bytes(sheets: dict) -> bytes:
             ["Kriteria BUNDLE", "1 NOTRAN memiliki >= 2 item DAN semua item punya nilai DISCOUNT (%) yang SAMA."],
             ["", "Di-analisa per FLOCCD (kode lokasi/outlet)."],
             ["", ""],
-            ["Total Revenue", "Sum dari JUALAHIR × QTY per baris"],
+            ["Total Revenue", "Sum dari JUMLAH per baris (sudah nett)"],
             ["Bundle Revenue", "Total Revenue dari transaksi yang terdeteksi sebagai bundle"],
             ["Bundle %", "Persentase bundle dari total transaksi"],
-            ["LINE_REVENUE", "Pendapatan per baris (JUALAHIR × QTY)"],
-            ["JUMLAH", "Subtotal per baris dari sumber data"],
+            ["LINE_REVENUE", "Pendapatan per baris (sama dengan JUMLAH, sudah nett)"],
+            ["JUMLAH", "Total nett per baris (sudah × QTY + diskon)"],
         ]
         pd.DataFrame(readme_rows, columns=["Istilah", "Artinya"]).to_excel(
             writer, sheet_name="BACA_DULU", index=False

@@ -60,7 +60,7 @@ class BundleAnalyzer:
             & (self.df["BUNDLE_DISC_PCT"] >= min_discount)
         )
         # revenue per baris
-        self.df["LINE_REVENUE"] = self.df["JUALAHIR"] * self.df["QTY"]
+        self.df["LINE_REVENUE"] = self.df["JUMLAH"]
         return self.df
 
     # ---------- SUMMARIES ----------
@@ -720,7 +720,7 @@ class BundleAnalyzer:
             lambda r: (r["MARGIN_UNIT"] / r["JUALAHIR"] * 100) if r["JUALAHIR"] > 0 else 0,
             axis=1,
         )
-        df["LINE_REVENUE"] = df["JUALAHIR"] * df["QTY"]
+        df["LINE_REVENUE"] = df["JUMLAH"]
         b = df[df["IS_BUNDLE"]]
         nb = df[~df["IS_BUNDLE"]]
 
@@ -1349,8 +1349,8 @@ class BundleAnalyzer:
             ["QTY", "Jumlah unit"],
             ["DISCOUNT", "Diskon per baris (sama dgn BUNDLE_DISC_PCT untuk bundle)"],
             ["JUALAHIR", "Harga jual akhir per unit"],
-            ["JUMLAH", "Subtotal (JUALAHIR * QTY)"],
-            ["LINE_REVENUE", "Pendapatan baris (sama dengan JUMLAH)"],
+            ["JUMLAH", "Total nett per baris (JUMLAH = LINE_NETT, sudah × QTY + diskon)"],
+            ["LINE_REVENUE", "Pendapatan baris (sama dengan JUMLAH, sudah nett)"],
             ["", ""],
             ["=== Sheet: Top_Kombinasi_Bundle ===", "Kombinasi barang yg paling sering dijadikan paket"],
             ["FLOCCD", "Kode lokasi"],
