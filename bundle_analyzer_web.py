@@ -544,23 +544,36 @@ with tabs[0]:
         sm_disp = sm.copy()
         st.dataframe(sm_disp, use_container_width=True, hide_index=True, height=400)
 
-        # --- Monthly summary ---
-        st.markdown('<div class="section-header">📅 Ringkasan per Bulan</div>', unsafe_allow_html=True)
-        mt = a.monthly_trend()
-        if not mt.empty:
-            mt_disp = mt.copy()
-            mt_disp["Revenue"] = mt_disp["Revenue"].apply(_format_rp)
-            mt_disp["Bundle_Revenue"] = mt_disp["Bundle_Revenue"].apply(_format_rp)
-            st.dataframe(mt_disp, use_container_width=True, hide_index=True)
-            fig_m = px.line(mt, x="YM", y=["Revenue", "Bundle_Revenue"], markers=True,
-                            title="Revenue per Bulan")
-            st.plotly_chart(fig_m, use_container_width=True)
+        # --- Monthly by Location ---
+        st.markdown('<div class="section-header">📅 Ringkasan per Lokasi per Bulan</div>', unsafe_allow_html=True)
+        msl = a.monthly_summary_by_location()
+        if not msl.empty:
+            st.dataframe(msl, use_container_width=True, hide_index=True)
+            # Pivot chart: stacked bar QTY paket vs satuan per bulan
+            pivot = msl.groupby(["TAHUN", "BULAN"])[["TOTAL QTY PAKET", "TOTAL QTY SATUAN"]].sum().reset_index()
+            pivot["Bulan"] = pivot["TAHUN"].astype(str) + "-" + pivot["BULAN"].astype(str).str.zfill(2)
+            fig_msl = px.bar(pivot, x="Bulan", y=["TOTAL QTY PAKET", "TOTAL QTY SATUAN"],
+                             title="QTY Paket vs Satuan per Bulan", barmode="group")
+            st.plotly_chart(fig_msl, use_container_width=True)
+
+        # --- Monthly bundle detail ---
+        with st.expander("📦 Detail Bundle per Lokasi per Bulan", expanded=False):
+            mbd = a.monthly_bundle_detail()
+            if not mbd.empty:
+                lok_list = sorted(mbd["KODE LOKASI"].unique())
+                lok_filt = st.selectbox("Filter Kode Lokasi", ["Semua"] + lok_list)
+                if lok_filt != "Semua":
+                    mbd = mbd[mbd["KODE LOKASI"] == lok_filt]
+                st.dataframe(mbd, use_container_width=True, hide_index=True)
+                top_combo = mbd.groupby("ITEM BUNDLE")["QTY_TERJUAL"].sum().sort_values(ascending=False).head(15).reset_index()
+                fig_mbd = px.bar(top_combo, x="QTY_TERJUAL", y="ITEM BUNDLE", orientation="h",
+                                 title="Top 15 Kombinasi Bundle")
+                st.plotly_chart(fig_mbd, use_container_width=True)
 
         # Download (multi-sheet)
-        sheets = {"Summary_Lokasi": sm}
-        if not mt.empty:
-            sheets["Summary_Bulan"] = mt
-        excel = to_excel_bytes(sheets)
+        sheets = {"Summary_Lokasi": sm, "Ringkasan_Bulan_Lokasi": msl}
+        if not mbd.empty:
+            sheets["Detail_Bundle"] = mbd
         st.download_button(
             "📥 Download Summary (Excel)",
             data=excel,
