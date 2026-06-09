@@ -565,8 +565,8 @@ with tabs[0]:
                 if lok_filt != "Semua":
                     mbd = mbd[mbd["KODE LOKASI"] == lok_filt]
                 st.dataframe(mbd, use_container_width=True, hide_index=True)
-                top_combo = mbd.groupby("ITEM BUNDLE")["QTY_TERJUAL"].sum().sort_values(ascending=False).head(15).reset_index()
-                fig_mbd = px.bar(top_combo, x="QTY_TERJUAL", y="ITEM BUNDLE", orientation="h",
+                top_combo = mbd.groupby("ITEM_BUNDLE")["QTY_TERJUAL"].sum().sort_values(ascending=False).head(15).reset_index()
+                fig_mbd = px.bar(top_combo, x="QTY_TERJUAL", y="ITEM_BUNDLE", orientation="h",
                                  title="Top 15 Kombinasi Bundle")
                 st.plotly_chart(fig_mbd, use_container_width=True)
 
