@@ -40,7 +40,20 @@ bundle_analysis*.xlsx
 bundle_search_*.xlsx
 output/
 
+# Output / generated — jangan di-commit
+stock_card_output.xlsx
+format_stok.txt
+error.txt
+test_*.xlsx
+tmp_*.py
+plu_map.json
+barcode_multi.json
+
+# Generated maps (dibuat dari barcodexls.xlsx via gen_maps.py)
+barcode_map.json
+
 # Secrets (token, key, etc.) — JANGAN PERNAH COMMIT
+token.txt
 token_github.txt
 *_token*.txt
 *.pem

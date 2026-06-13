@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Stock Opname Scanner — INTEX</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 12px; }
+h1 { font-size: 20px; text-align: center; margin-bottom: 8px; }
+.subtitle { text-align: center; font-size: 13px; color: #666; margin-bottom: 12px; }
+.card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+#reader { width: 100%; max-width: 400px; margin: 0 auto; }
+#reader video { border-radius: 8px; width: 100% !important; }
+.row { display: flex; gap: 8px; margin-top: 8px; }
+.row input, .row select { flex: 1; padding: 10px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; }
+.row input:focus, .row select:focus { border-color: #4CAF50; outline: none; }
+.btn { padding: 10px 20px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+.btn-green { background: #4CAF50; color: white; width: 100%; }
+.btn-blue { background: #2196F3; color: white; }
+.btn-red { background: #f44336; color: white; }
+.btn-sm { padding: 6px 12px; font-size: 14px; }
+.btn-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+#info_bar { margin-top: 8px; padding: 10px; background: #e8f5e9; border-radius: 8px; font-size: 14px; display: none; }
+table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #ddd; }
+th { background: #4CAF50; color: white; position: sticky; top: 0; }
+.del { color: red; cursor: pointer; font-weight: bold; font-size: 16px; }
+.summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.summary span { background: #e0e0e0; padding: 4px 12px; border-radius: 16px; font-size: 13px; }
+.tab { display: flex; gap: 4px; margin-bottom: 12px; }
+.tab button { flex: 1; padding: 8px; border: 2px solid #ddd; background: white; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.tab button.active { border-color: #4CAF50; background: #e8f5e9; font-weight: bold; }
+.hidden { display: none !important; }
+#status { text-align: center; font-size: 14px; color: #666; margin-top: 8px; }
+@media print { .no-print { display: none !important; } }
+</style>
+</head>
+<body>
+
+<h1>Stock Opname</h1>
+<div class="subtitle">INTEX — scan barcode / input kode item</div>
+
+<div class="tab no-print">
+  <button id="tab_scan" class="active" onclick="switchTab('scan')">Scan Kamera</button>
+  <button id="tab_manual" onclick="switchTab('manual')">Input Manual</button>
+</div>
+
+<!-- Panel Scan Kamera -->
+<div id="panel_scan">
+  <div class="card">
+    <div id="reader"></div>
+    <div id="status">Arahkan kamera ke barcode</div>
+  </div>
+</div>
+
+<!-- Panel Input Manual -->
+<div id="panel_manual" class="hidden">
+  <div class="card">
+    <div class="row">
+      <input type="text" id="manual_code" placeholder="Kode item / barcode" onkeydown="if(event.key==='Enter')manualLookup()">
+      <button class="btn btn-blue" onclick="manualLookup()">Cari</button>
+    </div>
+  </div>
+</div>
+
+<!-- Panel Hasil -->
+<div class="card" id="result_panel">
+  <div id="info_bar">
+    <div id="plu_display" style="font-size:18px;font-weight:bold"></div>
+    <div id="nama_display" style="font-size:14px;color:#555"></div>
+  </div>
+  <div class="row no-print">
+    <input type="text" id="qty_input" placeholder="Stok Fisik" inputmode="numeric">
+    <select id="lokasi_select">
+      <option value="">Pilih Toko</option>
+    </select>
+  </div>
+  <button class="btn btn-green no-print" onclick="saveScan()" style="margin-top:8px">Simpan</button>
+</div>
+
+<!-- Daftar Scan -->
+<div class="card">
+  <div class="summary">
+    <span id="count_badge">0 item</span>
+    <span id="total_badge">0 qty</span>
+    <span id="toko_badge">Semua</span>
+  </div>
+  <div id="table_wrap" style="max-height:300px;overflow-y:auto"></div>
+  <div class="btn-group no-print">
+    <button class="btn btn-blue btn-sm" onclick="exportJSON()">Export JSON</button>
+    <button class="btn btn-blue btn-sm" onclick="exportCSV()">Export CSV</button>
+    <button class="btn btn-blue btn-sm" onclick="saveToServer()">Kirim ke HO</button>
+    <button class="btn btn-red btn-sm" onclick="clearAll()">Hapus Semua</button>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'opname_data';
+const TOKO_KEY = 'opname_toko';
+let lastCode = '';
+let lastPlu = '';
+let barcodeMap = {};
+let namaMap = {};
+let lokasiList = [];
+
+// Load maps
+fetch('/barcode_map.json').then(r=>r.json()).then(d => barcodeMap = d).catch(()=>{});
+fetch('/nama_map.json').then(r=>r.json()).then(d => namaMap = d).catch(()=>{});
+
+// Load lokasi — ambil dari DBKSTHN via server
+fetch('/api/lokasi').then(r=>r.json()).then(list => {
+  lokasiList = list;
+  const sel = document.getElementById('lokasi_select');
+  sel.innerHTML = '<option value="">Pilih Toko</option>' +
+    list.map(l => `<option value="${l.kode}">${l.nama}</option>`).join('');
+  // Restore pilihan sebelumnya
+  const saved = localStorage.getItem(TOKO_KEY);
+  if (saved) sel.value = saved;
+}).catch(() => {
+  document.getElementById('lokasi_select').outerHTML =
+    '<input type="text" id="lokasi_input" placeholder="Nama Toko" style="padding:10px;font-size:16px;border:2px solid #ddd;border-radius:8px;flex:1">';
+});
+
+function getLokasi() {
+  const el = document.getElementById('lokasi_select');
+  if (el) return el.value;
+  const inp = document.getElementById('lokasi_input');
+  return inp ? inp.value.trim() : '';
+}
+
+function getData() {
+  return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+}
+
+function saveData(data) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  renderTable();
+}
+
+function switchTab(tab) {
+  document.getElementById('tab_scan').className = tab === 'scan' ? 'active' : '';
+  document.getElementById('tab_manual').className = tab === 'manual' ? 'active' : '';
+  document.getElementById('panel_scan').className = tab === 'scan' ? '' : 'hidden';
+  document.getElementById('panel_manual').className = tab === 'manual' ? '' : 'hidden';
+}
+
+function lookupCode(code) {
+  code = code.trim();
+  if (!code) return null;
+  // 1. Coba barcode map
+  let plu = barcodeMap[code];
+  if (plu) return { plu, source: 'barcode' };
+  // 2. Coba PLU map (ketik PLU langsung)
+  let nama = namaMap[code];
+  if (nama) return { plu: code, source: 'plu' };
+  // 3. Coba dengan leading zeros (ketik kode produk pendek)
+  let padded = code.padStart(7, '0');
+  nama = namaMap[padded];
+  if (nama) return { plu: padded, source: 'plu' };
+  // 4. Hapus leading zeros
+  let stripped = code.replace(/^0+/, '');
+  if (stripped !== code) {
+    plu = barcodeMap[stripped];
+    if (plu) return { plu, source: 'barcode' };
+    nama = namaMap[stripped];
+    if (nama) return { plu: stripped, source: 'plu' };
+  }
+  return null;
+}
+
+function showResult(found) {
+  const bar = document.getElementById('info_bar');
+  const pluDisp = document.getElementById('plu_display');
+  const namaDisp = document.getElementById('nama_display');
+  if (!found) {
+    bar.style.display = 'block';
+    bar.style.background = '#ffebee';
+    pluDisp.textContent = 'Tidak ditemukan';
+    namaDisp.textContent = 'Kode: ' + lastCode;
+    return;
+  }
+  lastPlu = found.plu;
+  bar.style.display = 'block';
+  bar.style.background = '#e8f5e9';
+  pluDisp.textContent = found.plu;
+  namaDisp.textContent = namaMap[found.plu] || '(tanpa nama)';
+}
+
+function manualLookup() {
+  const code = document.getElementById('manual_code').value.trim();
+  if (!code) return;
+  lastCode = code;
+  const found = lookupCode(code);
+  showResult(found);
+  if (found) {
+    document.getElementById('qty_input').focus();
+    autoFillQty(found.plu);
+  }
+}
+
+function onScanSuccess(code) {
+  const raw = code.trim();
+  if (raw === lastCode) return;
+  lastCode = raw;
+  const found = lookupCode(raw);
+  showResult(found);
+  if (found) {
+    document.getElementById('qty_input').focus();
+    autoFillQty(found.plu);
+    beep();
+  } else {
+    beepError();
+  }
+}
+
+function autoFillQty(plu) {
+  const data = getData();
+  const existing = data.find(r => r.plu === plu);
+  document.getElementById('qty_input').value = existing ? existing.qty : '';
+}
+
+function saveScan() {
+  const qty = document.getElementById('qty_input').value.trim();
+  if (!lastPlu) { alert('Scan / cari barang dulu!'); return; }
+  if (!qty || isNaN(qty)) { alert('Isi stok fisik (angka)!'); return; }
+  const toko = getLokasi();
+  const data = getData();
+  const existing = data.findIndex(r => r.plu === lastPlu);
+  if (existing >= 0) {
+    data[existing].qty = qty;
+    data[existing].ts = new Date().toISOString();
+    data[existing].toko = toko;
+  } else {
+    data.push({
+      plu: lastPlu,
+      nama: namaMap[lastPlu] || '',
+      qty: qty,
+      toko: toko,
+      ts: new Date().toISOString()
+    });
+  }
+  saveData(data);
+  document.getElementById('qty_input').value = '';
+  document.getElementById('info_bar').style.display = 'none';
+  lastCode = '';
+  lastPlu = '';
+  if (document.getElementById('manual_code')) document.getElementById('manual_code').value = '';
+  beep();
+}
+
+function renderTable() {
+  const data = getData();
+  document.getElementById('count_badge').textContent = data.length + ' item';
+  const total = data.reduce((s, r) => s + (parseInt(r.qty) || 0), 0);
+  document.getElementById('total_badge').textContent = total + ' qty';
+  if (data.length === 0) {
+    document.getElementById('table_wrap').innerHTML = '<p style="color:#999;text-align:center;padding:20px">Belum ada scan</p>';
+    return;
+  }
+  let html = '<table><thead><tr><th>PLU</th><th>Nama</th><th>Qty</th><th>Toko</th><th class="no-print"></th></tr></thead><tbody>';
+  data.forEach((r, i) => {
+    html += `<tr><td>${r.plu}</td><td style="font-size:12px">${r.nama || '-'}</td><td>${r.qty}</td><td style="font-size:11px">${r.toko || '-'}</td><td class="no-print"><span class="del" onclick="delRow(${i})">x</span></td></tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('table_wrap').innerHTML = html;
+  document.getElementById('toko_badge').textContent = getLokasi() || 'Semua';
+}
+
+function delRow(i) {
+  const data = getData();
+  data.splice(i, 1);
+  saveData(data);
+}
+
+function clearAll() {
+  if (confirm('Hapus semua data scan?')) {
+    localStorage.removeItem(STORAGE_KEY);
+    renderTable();
+  }
+}
+
+function exportJSON() {
+  const data = getData();
+  const blob = new Blob([JSON.stringify({
+    exported: new Date().toISOString(),
+    toko: getLokasi(),
+    items: data
+  }, null, 2)], {type: 'application/json'});
+  download(blob, 'opname_hasil.json');
+}
+
+function exportCSV() {
+  const data = getData();
+  let csv = 'PLU,Nama Barang,Qty,Toko,Tgl Scan\n';
+  data.forEach(r => {
+    const nama = (r.nama || '').replace(/,/g, ' ');
+    csv += `${r.plu},${nama},${r.qty},${r.toko || ''},${r.ts}\n`;
+  });
+  download(new Blob([csv], {type: 'text/csv'}), 'opname_hasil.csv');
+}
+
+function saveToServer() {
+  const data = getData();
+  if (data.length === 0) { alert('Belum ada data scan!'); return; }
+  const toko = getLokasi();
+  const payload = { items: data, toko: toko };
+  fetch('/api/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(r => r.json()).then(r => {
+    if (r.success) alert('Data terkirim ke HO!');
+    else alert('Error: ' + r.error);
+  }).catch(e => alert('Gagal kirim: ' + e + '\nExport JSON saja & kirim manual.'));
+}
+
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+}
+
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    osc.frequency.value = 800;
+    osc.connect(ctx.destination);
+    osc.start();
+    setTimeout(() => osc.stop(), 150);
+  } catch(e) {}
+}
+
+function beepError() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    osc.frequency.value = 200;
+    osc.connect(ctx.destination);
+    osc.start();
+    setTimeout(() => osc.stop(), 300);
+  } catch(e) {}
+}
+
+// Save toko selection
+document.addEventListener('change', function(e) {
+  if (e.target.id === 'lokasi_select') {
+    localStorage.setItem(TOKO_KEY, e.target.value);
+  }
+});
+
+// Start scanner
+const html5QrCode = new Html5Qrcode("reader");
+html5QrCode.start(
+  { facingMode: "environment" },
+  { fps: 10, qrbox: { width: 300, height: 200 } },
+  onScanSuccess
+).catch(err => {
+  document.getElementById('status').textContent = 'Kamera error: ' + err + '. Gunakan Input Manual.';
+});
+
+renderTable();
+</script>
+</body>
+</html>

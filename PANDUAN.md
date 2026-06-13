@@ -1071,7 +1071,92 @@ python stock_card.py --sa "stok awal januari 2026.xlsx" --dbu "DBUTHN_55_2026.xl
 
 ---
 
-## 20. FILE STRUCTURE (Lengkap)
+## 20. STOCK OPNAME SCANNER (BARU)
+
+Scan barcode pakai kamera HP langsung di browser — tanpa install aplikasi.
+
+### 20.A Arsitektur
+
+```
+                 TOKO (scan barcode)                    HO / KANTOR PUSAT
+  ┌──────────────────────────────┐         ┌──────────────────────────────┐
+  │ HP: browser → scanner.html  │  ──→    │ Streamlit: 4_Stock_Opname.py │
+  │   Scan barcode / ketik kode │  JSON   │   Ambil data dari server     │
+  │   Input stok fisik          │  via    │   Upload file hasil scan     │
+  │   Pilih toko/lokasi         │  API    │   Cocokkan dg stok sistem    │
+  │   Kirim ke server HO        │  or     │   Export Excel selisih       │
+  └──────────────────────────────┘  file   └──────────────────────────────┘
+         │                                        │
+         ▼                                        ▼
+  Server: opname_server.py             Excel: PLU | NAMA | STOK_SISTEM |
+  (FastAPI + QR code)                           QTY | SELISIH | STATUS
+```
+
+### 20.B Cara Pakai — di Toko
+
+1. **Jalankan server di HO:**
+   ```powershell
+   python opname_server.py
+   ```
+   Output: `http://192.168.x.x:8000`
+   Untuk akses dari luar (HTTPS): `ngrok http 8000`
+
+2. **Buka di HP toko:**
+   - Buka URL di HP (WiFi yang sama / via ngrok)
+   - Pilih **toko/lokasi** dari dropdown
+
+3. **Scan / Input item:**
+   - **Scan kamera:** arahkan ke barcode produk
+   - **Input manual:** ketik kode item (barcode/PLU) → Enter
+   - Muncul: PLU + Nama Barang
+   - Ketik **Stok Fisik** → klik **Simpan**
+
+4. **Kirim ke HO:**
+   - Klik **Kirim ke HO** → data otomatis masuk ke server
+   - Atau **Export JSON** → kirim via WA/email
+
+### 20.C Cara Pakai — di HO / Kantor Pusat
+
+1. **Via Server** (real-time):
+   - Buka Streamlit → halaman **Stock Opname** (tab "Ambil Data dari Server")
+   - Masukkan URL server → klik **Ambil Data**
+   - Data scan dari toko langsung muncul
+
+2. **Via Upload** (manual):
+   - Buka tab **Upload File Scan**
+   - Upload JSON/CSV hasil export dari toko
+
+3. **Cocokkan Stok:**
+   - Klik **Cocokkan dengan Stok Sistem**
+   - Hasil: tabel selisih + **Download Excel**
+   - Excel berisi 3 sheet: Selisih, Tidak Sesuai, Ringkasan
+
+### 20.D Fitur Scanner
+| Fitur | Keterangan |
+|-------|-----------|
+| Scan barcode | Kamera HP, auto-detect barcode produk |
+| Input manual | Ketik kode item (angka) → lookup otomatis |
+| Master barcode | 243.115 barcode → PLU internal dari `barcodexls.xlsx` |
+| Pilih toko | Dropdown daftar lokasi dari data |
+| Dual mode | Scan kamera (tab 1) / input manual (tab 2) |
+| Kirim ke HO | API langsung ke server / export JSON/CSV |
+| Beep | Suara "beep" saat scan berhasil |
+
+### 20.E File
+| File | Fungsi |
+|------|--------|
+| `opname_server.py` | Server FastAPI: QR code, API lokasi, save/download, serve static maps |
+| `opname_scanner.html` | Halaman scanner (kamera + manual input), lookup barcode → PLU → nama |
+| `opname_matcher.py` | CLI matcher: scan vs stok sistem → Excel 4 sheet |
+| `pages/4_Stock_Opname.py` | Streamlit page HO: ambil data server / upload / cocokkan |
+| `barcode_map.json` | 243.115 barcode → PLU internal (BARU) |
+| `nama_map.json` | 732 PLU → Nama Barang (BARU) |
+| `barcodexls.xlsx` | Master barcode original (274.568 rows) |
+| `gen_maps.py` | Generator barcode_map.json + nama_map.json |
+
+---
+
+## 21. FILE STRUCTURE (Lengkap)
 
 ```
 D:\scr\
@@ -1095,6 +1180,18 @@ D:\scr\
 ├── DBUTHN_55_2026.xlsx             ← DBU mutasi stok (BARU, 38.656 rows)
 ├── stok awal januari 2026.xlsx     ← Stok awal per PLU per lokasi (BARU, 4.445 rows)
 ├── stock & sales all (4).xlsx      ← Multi-brand stock & sales (BARU, 5.6 MB)
+├── opname_server.py                ← Server FastAPI: scanner + API save/download (BARU)
+├── opname_scanner.html             ← Halaman scanner: kamera + manual + barcode lookup (BARU)
+├── opname_matcher.py               ← CLI matcher: scan vs stok sistem → Excel (BARU)
+├── gen_maps.py                     ← Generator barcode_map.json + nama_map.json (BARU)
+├── barcode_map.json                ← 243.115 barcode → PLU internal (BARU)
+├── nama_map.json                   ← 732 PLU → Nama Barang (BARU)
+├── barcodexls.xlsx                 ← Master barcode original (274.568 rows) (BARU)
+├── pages/
+│   ├── 1_Stock_Sales_Analyzer.py   ← Streamlit page: Stock Sales (BARU)
+│   ├── 2_YoY_Forecast.py           ← Streamlit page: Multi-Year 9 tab (BARU)
+│   ├── 3_Stock_Card.py             ← Streamlit page: Stock Card (BARU)
+│   └── 4_Stock_Opname.py           ← Streamlit page: Stock Opname HO (BARU)
 ├── PANDUAN.md                      ← Dokumentasi ini
 ├── requirements.txt                ← Dependencies
 ├── .gitignore
