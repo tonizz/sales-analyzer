@@ -50,7 +50,8 @@ plu_map.json
 barcode_multi.json
 
 # Generated maps (dibuat dari barcodexls.xlsx via gen_maps.py)
-barcode_map.json
+# Ignore root level, track docs/ version for GitHub Pages
+/barcode_map.json
 
 # Secrets (token, key, etc.) — JANGAN PERNAH COMMIT
 token.txt
