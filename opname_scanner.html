@@ -105,6 +105,10 @@ let barcodeMap = {};
 let namaMap = {};
 let lokasiList = [];
 
+function padPlu(plu) {
+  return String(plu).padStart(7, '0');
+}
+
 // Load maps
 fetch('/barcode_map.json').then(r=>r.json()).then(d => barcodeMap = d).catch(()=>{});
 fetch('/nama_map.json').then(r=>r.json()).then(d => namaMap = d).catch(()=>{});
@@ -149,24 +153,29 @@ function switchTab(tab) {
 function lookupCode(code) {
   code = code.trim();
   if (!code) return null;
-  // 1. Coba barcode map
+  // Simpan kode asli untuk display
+  const raw = code;
+
+  // 1. Coba barcode map dengan kode asli
   let plu = barcodeMap[code];
   if (plu) return { plu, source: 'barcode' };
-  // 2. Coba PLU map (ketik PLU langsung)
-  let nama = namaMap[code];
-  if (nama) return { plu: code, source: 'plu' };
-  // 3. Coba dengan leading zeros (ketik kode produk pendek)
-  let padded = code.padStart(7, '0');
-  nama = namaMap[padded];
-  if (nama) return { plu: padded, source: 'plu' };
-  // 4. Hapus leading zeros
+
+  // 2. Hapus leading zeros lalu coba barcode map
   let stripped = code.replace(/^0+/, '');
   if (stripped !== code) {
     plu = barcodeMap[stripped];
     if (plu) return { plu, source: 'barcode' };
-    nama = namaMap[stripped];
-    if (nama) return { plu: stripped, source: 'plu' };
   }
+
+  // 3. Coba PLU map (tanpa leading zero)
+  let nama = namaMap[stripped];
+  if (nama) return { plu: stripped, source: 'plu' };
+
+  // 4. Coba dengan leading zero (7 digit)
+  let padded = stripped.padStart(7, '0');
+  nama = namaMap[padded];
+  if (nama) return { plu: padded, source: 'plu' };
+
   return null;
 }
 
@@ -184,7 +193,7 @@ function showResult(found) {
   lastPlu = found.plu;
   bar.style.display = 'block';
   bar.style.background = '#e8f5e9';
-  pluDisp.textContent = found.plu;
+  pluDisp.textContent = padPlu(found.plu);
   namaDisp.textContent = namaMap[found.plu] || '(tanpa nama)';
 }
 
@@ -261,7 +270,7 @@ function renderTable() {
   }
   let html = '<table><thead><tr><th>PLU</th><th>Nama</th><th>Qty</th><th>Toko</th><th class="no-print"></th></tr></thead><tbody>';
   data.forEach((r, i) => {
-    html += `<tr><td>${r.plu}</td><td style="font-size:12px">${r.nama || '-'}</td><td>${r.qty}</td><td style="font-size:11px">${r.toko || '-'}</td><td class="no-print"><span class="del" onclick="delRow(${i})">x</span></td></tr>`;
+    html += `<tr><td>${padPlu(r.plu)}</td><td style="font-size:12px">${r.nama || '-'}</td><td>${r.qty}</td><td style="font-size:11px">${r.toko || '-'}</td><td class="no-print"><span class="del" onclick="delRow(${i})">x</span></td></tr>`;
   });
   html += '</tbody></table>';
   document.getElementById('table_wrap').innerHTML = html;
@@ -283,20 +292,22 @@ function clearAll() {
 
 function exportJSON() {
   const data = getData();
+  // Tambah plu_padded di export
+  const items = data.map(r => ({ ...r, plu_padded: padPlu(r.plu) }));
   const blob = new Blob([JSON.stringify({
     exported: new Date().toISOString(),
     toko: getLokasi(),
-    items: data
+    items: items
   }, null, 2)], {type: 'application/json'});
   download(blob, 'opname_hasil.json');
 }
 
 function exportCSV() {
   const data = getData();
-  let csv = 'PLU,Nama Barang,Qty,Toko,Tgl Scan\n';
+  let csv = 'PLU,PLU_7DIGIT,Nama Barang,Qty,Toko,Tgl Scan\n';
   data.forEach(r => {
     const nama = (r.nama || '').replace(/,/g, ' ');
-    csv += `${r.plu},${nama},${r.qty},${r.toko || ''},${r.ts}\n`;
+    csv += `${r.plu},${padPlu(r.plu)},${nama},${r.qty},${r.toko || ''},${r.ts}\n`;
   });
   download(new Blob([csv], {type: 'text/csv'}), 'opname_hasil.csv');
 }
