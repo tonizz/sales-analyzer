@@ -30,14 +30,14 @@ desktop.ini
 *.bak
 tmp_*.py
 
-# Excel file sumber (data contoh, jangan di-commit)
-DBKSTHN_*.xlsx
-stock & sales all*.xlsx
-
-# Output bundle analysis
-bundle_analysis*.xlsx
+# Excel sources — ignore old years & generated analysis
+DBKSTHN_55_2023.xlsx
+DBKSTHN_55_2024.xlsx
+DBKSTHN_55_2025.xlsx
 *_bundle_analysis*.xlsx
+bundle_analysis*.xlsx
 bundle_search_*.xlsx
+stock & sales all*.xlsx
 output/
 
 # Output / generated — jangan di-commit
