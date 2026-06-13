@@ -13,6 +13,11 @@ from urllib.request import urlopen, Request
 import pandas as pd
 import streamlit as st
 
+# Import StockCard untuk generate data stok on-the-fly
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from stock_card import StockCard
+
 st.set_page_config(page_title="Stock Opname — HO", page_icon="📦", layout="wide")
 
 # ─── Auth ───
@@ -55,28 +60,29 @@ def load_barcode_count() -> int:
 
 @st.cache_data(show_spinner="Loading stock sistem...")
 def load_stock_sistem() -> pd.DataFrame:
-    """Load stok per PLU dari stock_card_output (bulan terakhir)."""
-    path = BASE_DIR / "stock_card_output.xlsx"
-    if not path.exists():
+    """Load stok per PLU dari data langsung via StockCard."""
+    sa_path = BASE_DIR / "stok awal januari 2026.xlsx"
+    dbu_path = BASE_DIR / "DBUTHN_55_2026.xlsx"
+    dbks_path = BASE_DIR / "DBKSTHN_55_2026.xlsx"
+    if not sa_path.exists() or not dbu_path.exists() or not dbks_path.exists():
+        st.warning("Data stok tidak lengkap di server. Jalankan stock_card.py dulu.")
         return pd.DataFrame()
-    xl = pd.ExcelFile(path)
-    months = ['Stok Jan', 'Stok Feb', 'Stok Mar', 'Stok Apr', 'Stok Mei', 'Stok Jun',
-              'Stok Jul', 'Stok Agu', 'Stok Sep', 'Stok Okt', 'Stok Nov', 'Stok Des']
-    sheet = None
-    for m in reversed(months):
-        if m in xl.sheet_names:
-            sheet = m
-            break
-    if not sheet:
-        sheet = xl.sheet_names[0]
-    df = pd.read_excel(path, sheet_name=sheet)
-    df = df.groupby('PLU').agg(
-        NAMA_BRG=('NAMA_BRG', 'first'),
-        STOK_SISTEM=('Stock', 'sum')
-    ).reset_index()
-    df['PLU'] = df['PLU'].astype(str).str.strip()
-    df['STOK_SISTEM'] = df['STOK_SISTEM'].fillna(0).astype(int)
-    return df
+    try:
+        sc = StockCard()
+        sc.load_data(str(sa_path), str(dbu_path), str(dbks_path))
+        cards = sc.get_stock_card()  # DataFrame: semua bulan
+        last_month = cards['BULAN'].max()
+        last_df = cards[cards['BULAN'] == last_month]
+        result = last_df.groupby('PLU').agg(
+            NAMA_BRG=('NAMA_BRG', 'first'),
+            STOK_SISTEM=('STOK_AKHIR', 'sum')
+        ).reset_index()
+        result['PLU'] = result['PLU'].astype(str).str.strip()
+        result['STOK_SISTEM'] = result['STOK_SISTEM'].fillna(0).astype(int)
+        return result
+    except Exception as e:
+        st.warning(f"Gagal generate stok sistem: {e}")
+        return pd.DataFrame()
 
 def load_scan_from_server(server_url: str) -> dict | None:
     """Ambil data scan dari server."""
