@@ -34,6 +34,7 @@ DBKS_PATH = BASE_DIR / "DBKSTHN_55_2026.xlsx"
 BARCODE_XLSX = BASE_DIR / "barcodexls.xlsx"
 BARCODE_MAP = BASE_DIR / "barcode_map.json"
 NAMA_MAP = BASE_DIR / "nama_map.json"
+LOKASI_MAP = BASE_DIR / "docs" / "lokasi_map.json"
 
 
 def ensure_barcode_map():
@@ -214,8 +215,29 @@ def serve_nama_map():
     return JSONResponse({})
 
 
+@app.get("/api/lokasi_map")
+def serve_lokasi_map():
+    path = LOKASI_MAP
+    if path.exists():
+        return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
+    return JSONResponse({})
+
+
 if __name__ == "__main__":
     ensure_barcode_map()
+    if not LOKASI_MAP.exists():
+        try:
+            import pandas as pd
+            sa = pd.read_excel(BASE_DIR / "stok awal januari 2026.xlsx")
+            lok = sa[['lokasi', 'namalokasi']].drop_duplicates()
+            lok['lokasi'] = lok['lokasi'].astype(int).astype(str)
+            lokasi_map = dict(zip(lok['lokasi'], lok['namalokasi']))
+            LOKASI_MAP.parent.mkdir(parents=True, exist_ok=True)
+            with open(LOKASI_MAP, "w") as f:
+                json.dump(lokasi_map, f, indent=2)
+            print(f"  Lokasi map: {len(lokasi_map)} locations")
+        except Exception as e:
+            print(f"  Warning: could not generate lokasi_map: {e}")
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
     ip = get_local_ip()
     print(f"\n  Server:  http://{ip}:{port}")

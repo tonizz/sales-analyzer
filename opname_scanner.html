@@ -8,26 +8,29 @@
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 12px; }
-h1 { font-size: 20px; text-align: center; margin-bottom: 8px; }
+h1 { font-size: 20px; text-align: center; margin-bottom: 4px; }
 .subtitle { text-align: center; font-size: 13px; color: #666; margin-bottom: 12px; }
 .card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
 #reader { width: 100%; max-width: 400px; margin: 0 auto; }
 #reader video { border-radius: 8px; width: 100% !important; }
-.row { display: flex; gap: 8px; margin-top: 8px; }
+.row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
 .row input, .row select { flex: 1; padding: 10px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; }
 .row input:focus, .row select:focus { border-color: #4CAF50; outline: none; }
+.row label { font-size: 14px; font-weight: bold; white-space: nowrap; color: #333; }
 .btn { padding: 10px 20px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
 .btn-green { background: #4CAF50; color: white; width: 100%; }
 .btn-blue { background: #2196F3; color: white; }
 .btn-red { background: #f44336; color: white; }
 .btn-sm { padding: 6px 12px; font-size: 14px; }
 .btn-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-#info_bar { margin-top: 8px; padding: 10px; background: #e8f5e9; border-radius: 8px; font-size: 14px; display: none; }
+.info-box { margin-top: 8px; padding: 10px; border-radius: 8px; font-size: 14px; display: none; }
+.info-box.ok { background: #e8f5e9; display: block; }
+.info-box.err { background: #ffebee; display: block; }
 table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
 th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #ddd; }
 th { background: #4CAF50; color: white; position: sticky; top: 0; }
 .del { color: red; cursor: pointer; font-weight: bold; font-size: 16px; }
-.summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .summary span { background: #e0e0e0; padding: 4px 12px; border-radius: 16px; font-size: 13px; }
 .tab { display: flex; gap: 4px; margin-bottom: 12px; }
 .tab button { flex: 1; padding: 8px; border: 2px solid #ddd; background: white; border-radius: 8px; cursor: pointer; font-size: 14px; }
@@ -40,14 +43,21 @@ th { background: #4CAF50; color: white; position: sticky; top: 0; }
 <body>
 
 <h1>Stock Opname</h1>
-<div class="subtitle">INTEX — scan barcode / input kode item</div>
+<div class="subtitle">INTEX</div>
+
+<div class="card">
+  <div class="row">
+    <label>Lokasi</label>
+    <input type="text" id="lokasi_code" placeholder="Kode toko, cth: 55464" inputmode="numeric" style="flex:0.4" oninput="lookupLokasi()">
+    <div id="lokasi_name" style="flex:1;font-size:14px;color:#1565c0;font-weight:bold">—</div>
+  </div>
+</div>
 
 <div class="tab no-print">
   <button id="tab_scan" class="active" onclick="switchTab('scan')">Scan Kamera</button>
   <button id="tab_manual" onclick="switchTab('manual')">Input Manual</button>
 </div>
 
-<!-- Panel Scan Kamera -->
 <div id="panel_scan">
   <div class="card">
     <div id="reader"></div>
@@ -55,322 +65,205 @@ th { background: #4CAF50; color: white; position: sticky; top: 0; }
   </div>
 </div>
 
-<!-- Panel Input Manual -->
 <div id="panel_manual" class="hidden">
   <div class="card">
     <div class="row">
+      <label>PLU</label>
       <input type="text" id="manual_code" placeholder="Kode item / barcode" onkeydown="if(event.key==='Enter')manualLookup()">
       <button class="btn btn-blue" onclick="manualLookup()">Cari</button>
     </div>
   </div>
 </div>
 
-<!-- Panel Hasil -->
-<div class="card" id="result_panel">
-  <div id="info_bar">
-    <div id="plu_display" style="font-size:18px;font-weight:bold"></div>
-    <div id="nama_display" style="font-size:14px;color:#555"></div>
-  </div>
+<div class="card">
+  <div id="info_bar" class="info-box"></div>
   <div class="row no-print">
+    <label>Qty</label>
     <input type="text" id="qty_input" placeholder="Stok Fisik" inputmode="numeric">
-    <select id="lokasi_select">
-      <option value="">Pilih Toko</option>
-    </select>
   </div>
   <button class="btn btn-green no-print" onclick="saveScan()" style="margin-top:8px">Simpan</button>
 </div>
 
-<!-- Daftar Scan -->
 <div class="card">
   <div class="summary">
     <span id="count_badge">0 item</span>
     <span id="total_badge">0 qty</span>
-    <span id="toko_badge">Semua</span>
+    <span id="lok_badge">—</span>
   </div>
   <div id="table_wrap" style="max-height:300px;overflow-y:auto"></div>
   <div class="btn-group no-print">
+    <button class="btn btn-blue btn-sm" onclick="exportJSON()">Kirim ke HO</button>
     <button class="btn btn-blue btn-sm" onclick="exportJSON()">Export JSON</button>
     <button class="btn btn-blue btn-sm" onclick="exportCSV()">Export CSV</button>
-    <button class="btn btn-blue btn-sm" onclick="saveToServer()">Kirim ke HO</button>
     <button class="btn btn-red btn-sm" onclick="clearAll()">Hapus Semua</button>
   </div>
 </div>
 
 <script>
 const STORAGE_KEY = 'opname_data';
-const TOKO_KEY = 'opname_toko';
-let lastCode = '';
+const LOK_KEY = 'opname_lokasi';
 let lastPlu = '';
 let barcodeMap = {};
 let namaMap = {};
-let lokasiList = [];
+let lokasiMap = {};
+let lokasiKode = '';
+let lokasiNama = '';
 
-function padPlu(plu) {
-  return String(plu).padStart(7, '0');
+function padPlu(p) { return String(p).padStart(7, '0'); }
+
+async function loadMaps() {
+  try { let r=await fetch('/barcode_map.json'); barcodeMap=await r.json(); } catch(e) {}
+  try { let r=await fetch('/nama_map.json'); namaMap=await r.json(); } catch(e) {}
+  try { let r=await fetch('/api/lokasi_map'); lokasiMap=await r.json(); } catch(e) {}
+  restoreLokasi();
+}
+loadMaps();
+
+function restoreLokasi() {
+  const saved = localStorage.getItem(LOK_KEY);
+  if (saved) {
+    try {
+      const p = JSON.parse(saved);
+      document.getElementById('lokasi_code').value = p.kode;
+      lokasiKode = p.kode;
+      lokasiNama = p.nama;
+      document.getElementById('lokasi_name').textContent = p.nama || '—';
+      document.getElementById('lok_badge').textContent = p.kode;
+    } catch(e) {}
+  }
 }
 
-// Load maps
-fetch('/barcode_map.json').then(r=>r.json()).then(d => barcodeMap = d).catch(()=>{});
-fetch('/nama_map.json').then(r=>r.json()).then(d => namaMap = d).catch(()=>{});
-
-// Load lokasi — ambil dari DBKSTHN via server
-fetch('/api/lokasi').then(r=>r.json()).then(list => {
-  lokasiList = list;
-  const sel = document.getElementById('lokasi_select');
-  sel.innerHTML = '<option value="">Pilih Toko</option>' +
-    list.map(l => `<option value="${l.kode}">${l.nama}</option>`).join('');
-  // Restore pilihan sebelumnya
-  const saved = localStorage.getItem(TOKO_KEY);
-  if (saved) sel.value = saved;
-}).catch(() => {
-  document.getElementById('lokasi_select').outerHTML =
-    '<input type="text" id="lokasi_input" placeholder="Nama Toko" style="padding:10px;font-size:16px;border:2px solid #ddd;border-radius:8px;flex:1">';
-});
-
-function getLokasi() {
-  const el = document.getElementById('lokasi_select');
-  if (el) return el.value;
-  const inp = document.getElementById('lokasi_input');
-  return inp ? inp.value.trim() : '';
+function lookupLokasi() {
+  const code = document.getElementById('lokasi_code').value.trim();
+  if (!code) {
+    document.getElementById('lokasi_name').textContent = '—';
+    lokasiKode = ''; lokasiNama = '';
+    document.getElementById('lok_badge').textContent = '—';
+    return;
+  }
+  const nama = lokasiMap[code] || lokasiMap[code.replace(/^0+/,'')] || '';
+  lokasiKode = code; lokasiNama = nama;
+  document.getElementById('lokasi_name').textContent = nama || '(kode tidak dikenal)';
+  document.getElementById('lok_badge').textContent = code;
+  localStorage.setItem(LOK_KEY, JSON.stringify({kode: code, nama: nama}));
 }
 
-function getData() {
-  return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-}
-
-function saveData(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  renderTable();
-}
+function getData() { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+function saveData(data) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); renderTable(); }
 
 function switchTab(tab) {
-  document.getElementById('tab_scan').className = tab === 'scan' ? 'active' : '';
-  document.getElementById('tab_manual').className = tab === 'manual' ? 'active' : '';
-  document.getElementById('panel_scan').className = tab === 'scan' ? '' : 'hidden';
-  document.getElementById('panel_manual').className = tab === 'manual' ? '' : 'hidden';
+  document.getElementById('tab_scan').className = tab==='scan'?'active':'';
+  document.getElementById('tab_manual').className = tab==='manual'?'active':'';
+  document.getElementById('panel_scan').className = tab==='scan'?'':'hidden';
+  document.getElementById('panel_manual').className = tab==='manual'?'':'hidden';
 }
 
 function lookupCode(code) {
   code = code.trim();
   if (!code) return null;
-  // Simpan kode asli untuk display
-  const raw = code;
-
-  // 1. Coba barcode map dengan kode asli
   let plu = barcodeMap[code];
-  if (plu) return { plu, source: 'barcode' };
-
-  // 2. Hapus leading zeros lalu coba barcode map
-  let stripped = code.replace(/^0+/, '');
-  if (stripped !== code) {
-    plu = barcodeMap[stripped];
-    if (plu) return { plu, source: 'barcode' };
-  }
-
-  // 3. Coba PLU map (tanpa leading zero)
-  let nama = namaMap[stripped];
-  if (nama) return { plu: stripped, source: 'plu' };
-
-  // 4. Coba dengan leading zero (7 digit)
-  let padded = stripped.padStart(7, '0');
-  nama = namaMap[padded];
-  if (nama) return { plu: padded, source: 'plu' };
-
+  if (plu) return {plu, src:'barcode'};
+  let s = code.replace(/^0+/, '');
+  if (s !== code) { plu = barcodeMap[s]; if (plu) return {plu, src:'barcode'}; }
+  if (namaMap[s]) return {plu:s, src:'plu'};
+  let p = s.padStart(7, '0');
+  if (namaMap[p]) return {plu:p, src:'plu'};
   return null;
 }
 
-function showResult(found) {
-  const bar = document.getElementById('info_bar');
-  const pluDisp = document.getElementById('plu_display');
-  const namaDisp = document.getElementById('nama_display');
-  if (!found) {
-    bar.style.display = 'block';
-    bar.style.background = '#ffebee';
-    pluDisp.textContent = 'Tidak ditemukan';
-    namaDisp.textContent = 'Kode: ' + lastCode;
-    return;
-  }
-  lastPlu = found.plu;
-  bar.style.display = 'block';
-  bar.style.background = '#e8f5e9';
-  pluDisp.textContent = padPlu(found.plu);
-  namaDisp.textContent = namaMap[found.plu] || '(tanpa nama)';
+function showInfo(type, plu, nama) {
+  const el = document.getElementById('info_bar');
+  el.className = 'info-box ' + type;
+  el.innerHTML = type === 'ok'
+    ? `<div style="font-size:18px;font-weight:bold">${padPlu(plu)}</div><div style="font-size:14px;color:#555">${nama||''}</div>`
+    : `<div style="font-weight:bold">${plu||''}</div><div style="font-size:14px;color:#555">${nama||''}</div>`;
 }
 
 function manualLookup() {
   const code = document.getElementById('manual_code').value.trim();
   if (!code) return;
-  lastCode = code;
-  const found = lookupCode(code);
-  showResult(found);
-  if (found) {
-    document.getElementById('qty_input').focus();
-    autoFillQty(found.plu);
-  }
+  const f = lookupCode(code);
+  if (f) { lastPlu = f.plu; showInfo('ok', f.plu, namaMap[f.plu]||''); autoFillQty(f.plu); }
+  else { showInfo('err', 'Kode: '+code, 'Tidak ditemukan'); lastPlu=''; }
 }
 
-function onScanSuccess(code) {
-  const raw = code.trim();
-  if (raw === lastCode) return;
-  lastCode = raw;
-  const found = lookupCode(raw);
-  showResult(found);
-  if (found) {
-    document.getElementById('qty_input').focus();
-    autoFillQty(found.plu);
-    beep();
-  } else {
-    beepError();
-  }
+function onScanSuccess(raw) {
+  const code = raw.trim();
+  const f = lookupCode(code);
+  if (f) { lastPlu = f.plu; showInfo('ok', f.plu, namaMap[f.plu]||''); autoFillQty(f.plu); beep(); return; }
+  const s = code.replace(/^0+/, '');
+  if (namaMap[s]) { lastPlu = s; showInfo('ok', s, namaMap[s]+' (barcode)'); autoFillQty(s); beep(); return; }
+  showInfo('err', 'Barcode: '+code, 'Tidak terdaftar');
+  lastPlu = '';
+  beepErr();
 }
 
 function autoFillQty(plu) {
-  const data = getData();
-  const existing = data.find(r => r.plu === plu);
-  document.getElementById('qty_input').value = existing ? existing.qty : '';
+  const d = getData();
+  const e = d.find(r => r.plu === plu);
+  document.getElementById('qty_input').value = e ? e.qty : '';
+  document.getElementById('qty_input').focus();
 }
 
 function saveScan() {
-  const qty = document.getElementById('qty_input').value.trim();
   if (!lastPlu) { alert('Scan / cari barang dulu!'); return; }
+  const qty = document.getElementById('qty_input').value.trim();
   if (!qty || isNaN(qty)) { alert('Isi stok fisik (angka)!'); return; }
-  const toko = getLokasi();
   const data = getData();
-  const existing = data.findIndex(r => r.plu === lastPlu);
-  if (existing >= 0) {
-    data[existing].qty = qty;
-    data[existing].ts = new Date().toISOString();
-    data[existing].toko = toko;
-  } else {
-    data.push({
-      plu: lastPlu,
-      nama: namaMap[lastPlu] || '',
-      qty: qty,
-      toko: toko,
-      ts: new Date().toISOString()
-    });
-  }
+  const i = data.findIndex(r => r.plu === lastPlu);
+  const item = { plu: lastPlu, nama: namaMap[lastPlu]||'', qty, lokasi_kode: lokasiKode, lokasi_nama: lokasiNama, ts: new Date().toISOString() };
+  if (i >= 0) { data[i] = item; } else { data.push(item); }
   saveData(data);
   document.getElementById('qty_input').value = '';
-  document.getElementById('info_bar').style.display = 'none';
-  lastCode = '';
-  lastPlu = '';
+  document.getElementById('info_bar').className = 'info-box';
   if (document.getElementById('manual_code')) document.getElementById('manual_code').value = '';
+  lastPlu = '';
   beep();
 }
 
 function renderTable() {
   const data = getData();
   document.getElementById('count_badge').textContent = data.length + ' item';
-  const total = data.reduce((s, r) => s + (parseInt(r.qty) || 0), 0);
-  document.getElementById('total_badge').textContent = total + ' qty';
-  if (data.length === 0) {
-    document.getElementById('table_wrap').innerHTML = '<p style="color:#999;text-align:center;padding:20px">Belum ada scan</p>';
-    return;
-  }
-  let html = '<table><thead><tr><th>PLU</th><th>Nama</th><th>Qty</th><th>Toko</th><th class="no-print"></th></tr></thead><tbody>';
-  data.forEach((r, i) => {
-    html += `<tr><td>${padPlu(r.plu)}</td><td style="font-size:12px">${r.nama || '-'}</td><td>${r.qty}</td><td style="font-size:11px">${r.toko || '-'}</td><td class="no-print"><span class="del" onclick="delRow(${i})">x</span></td></tr>`;
-  });
-  html += '</tbody></table>';
-  document.getElementById('table_wrap').innerHTML = html;
-  document.getElementById('toko_badge').textContent = getLokasi() || 'Semua';
+  document.getElementById('total_badge').textContent = data.reduce((s,r) => s+(parseInt(r.qty)||0), 0) + ' qty';
+  if (data.length === 0) { document.getElementById('table_wrap').innerHTML = '<p style="color:#999;text-align:center;padding:20px">Belum ada scan</p>'; return; }
+  let h = '<table><thead><tr><th>PLU</th><th>Nama</th><th>Qty</th><th>Lokasi</th><th class="no-print"></th></tr></thead><tbody>';
+  data.forEach((r,i) => { h += `<tr><td>${padPlu(r.plu)}</td><td style="font-size:12px">${r.nama||'-'}</td><td>${r.qty}</td><td style="font-size:11px">${r.lokasi_kode||'-'}</td><td class="no-print"><span class="del" onclick="delRow(${i})">x</span></td></tr>`; });
+  h += '</tbody></table>';
+  document.getElementById('table_wrap').innerHTML = h;
 }
 
-function delRow(i) {
-  const data = getData();
-  data.splice(i, 1);
-  saveData(data);
-}
-
-function clearAll() {
-  if (confirm('Hapus semua data scan?')) {
-    localStorage.removeItem(STORAGE_KEY);
-    renderTable();
-  }
-}
-
-function exportJSON() {
-  const data = getData();
-  // Tambah plu_padded di export
-  const items = data.map(r => ({ ...r, plu_padded: padPlu(r.plu) }));
-  const blob = new Blob([JSON.stringify({
-    exported: new Date().toISOString(),
-    toko: getLokasi(),
-    items: items
-  }, null, 2)], {type: 'application/json'});
-  download(blob, 'opname_hasil.json');
-}
-
-function exportCSV() {
-  const data = getData();
-  let csv = 'PLU,PLU_7DIGIT,Nama Barang,Qty,Toko,Tgl Scan\n';
-  data.forEach(r => {
-    const nama = (r.nama || '').replace(/,/g, ' ');
-    csv += `${r.plu},${padPlu(r.plu)},${nama},${r.qty},${r.toko || ''},${r.ts}\n`;
-  });
-  download(new Blob([csv], {type: 'text/csv'}), 'opname_hasil.csv');
-}
+function delRow(i) { const d=getData(); d.splice(i,1); saveData(d); }
+function clearAll() { if (confirm('Hapus semua?')) { localStorage.removeItem(STORAGE_KEY); renderTable(); } }
 
 function saveToServer() {
   const data = getData();
-  if (data.length === 0) { alert('Belum ada data scan!'); return; }
-  const toko = getLokasi();
-  const payload = { items: data, toko: toko };
+  if (data.length === 0) { alert('Belum ada data!'); return; }
   fetch('/api/save', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  }).then(r => r.json()).then(r => {
-    if (r.success) alert('Data terkirim ke HO!');
-    else alert('Error: ' + r.error);
-  }).catch(e => alert('Gagal kirim: ' + e + '\nExport JSON saja & kirim manual.'));
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ items: data, lokasi: {kode: lokasiKode, nama: lokasiNama} })
+  }).then(r=>r.json()).then(r => {
+    if (r.success) alert('Data terkirim ke HO!'); else alert('Error: '+r.error);
+  }).catch(e => alert('Gagal kirim: '+e+'\nExport JSON & kirim manual.'));
 }
 
-function download(blob, name) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
+function exportJSON() {
+  const data = getData().map(r => ({...r, plu_padded: padPlu(r.plu)}));
+  const blob = new Blob([JSON.stringify({exported:new Date().toISOString(), lokasi:{kode:lokasiKode,nama:lokasiNama}, items:data}, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='opname_hasil.json'; a.click();
+}
+function exportCSV() {
+  let csv = 'PLU,PLU_7DIGIT,Nama Barang,Qty,Kode Lokasi,Nama Lokasi,Tgl Scan\n';
+  getData().forEach(r => { csv += `${r.plu},${padPlu(r.plu)},${(r.nama||'').replace(/,/g,' ')},${r.qty},${r.lokasi_kode||''},${r.lokasi_nama||''},${r.ts}\n`; });
+  const a = document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='opname_hasil.csv'; a.click();
 }
 
-function beep() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    osc.frequency.value = 800;
-    osc.connect(ctx.destination);
-    osc.start();
-    setTimeout(() => osc.stop(), 150);
-  } catch(e) {}
-}
+function beep() { try { const c=new AudioContext(), o=c.createOscillator(); o.frequency.value=800; o.connect(c.destination); o.start(); setTimeout(()=>o.stop(),150); } catch(e){} }
+function beepErr() { try { const c=new AudioContext(), o=c.createOscillator(); o.frequency.value=200; o.connect(c.destination); o.start(); setTimeout(()=>o.stop(),300); } catch(e){} }
 
-function beepError() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    osc.frequency.value = 200;
-    osc.connect(ctx.destination);
-    osc.start();
-    setTimeout(() => osc.stop(), 300);
-  } catch(e) {}
-}
-
-// Save toko selection
-document.addEventListener('change', function(e) {
-  if (e.target.id === 'lokasi_select') {
-    localStorage.setItem(TOKO_KEY, e.target.value);
-  }
-});
-
-// Start scanner
-const html5QrCode = new Html5Qrcode("reader");
-html5QrCode.start(
-  { facingMode: "environment" },
-  { fps: 10, qrbox: { width: 300, height: 200 } },
-  onScanSuccess
-).catch(err => {
-  document.getElementById('status').textContent = 'Kamera error: ' + err + '. Gunakan Input Manual.';
+const qr = new Html5Qrcode("reader");
+qr.start({facingMode:"environment"},{fps:10,qrbox:{width:300,height:200}},onScanSuccess).catch(e=>{
+  document.getElementById('status').textContent='Kamera error — Gunakan Input Manual';
 });
 
 renderTable();
