@@ -111,9 +111,12 @@ class StockCard:
                 v = r.get("NAMA_BRG")
                 if pd.notna(v):
                     nama_brg_map.setdefault(r["PLU"], v)
-        if "LOKASI" in dbu.columns:
-            # Use first few rows for nama lokasi from stok awal
-            pass
+        if "LOKASI" in dbu.columns and "FNAMA" in dbu.columns:
+            # Fallback nama lokasi dari DBU untuk lokasi yang tidak ada di stok awal
+            for _, r in dbu.iterrows():
+                v = r.get("FNAMA")
+                if pd.notna(v) and str(v).strip():
+                    lokasi_map.setdefault(r["LOKASI"], str(v).strip())
 
         # --- Aggregate DBU IN/OUT ---
         dbu_agg = pd.DataFrame()
