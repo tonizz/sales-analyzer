@@ -1351,6 +1351,80 @@ class BundleAnalyzer:
             ])
         return result
 
+    # ---------- BASKET ANALYSIS ----------
+    def basket_analysis(self, start=None, end=None, floocd=None, bulan=None) -> pd.DataFrame:
+        df = self.filter_df(start, end, floocd)
+        if bulan is not None:
+            bln_list = [bulan] if isinstance(bulan, int) else bulan
+            df = df[df["FDATE"].dt.month.isin(bln_list)]
+        tx = df.groupby(["FLOCCD", "NOTRAN"], observed=True).agg(
+            TOTAL_NETT=("LINE_REVENUE", "sum"),
+            TOTAL_QTY=("QTY", "sum"),
+            IS_BUNDLE=("IS_BUNDLE", "any"),
+        ).reset_index()
+        bins = [0, 50000, 100000, 200000, 300000, 500000, 1000000, float("inf")]
+        labels = [
+            "di bawah 50.000",
+            "50.000 - 99.999",
+            "100.000 - 199.999",
+            "200.000 - 299.999",
+            "300.000 - 500.000",
+            "501.000 - 1.000.000",
+            "di atas 1.000.000",
+        ]
+        tx["BASKET"] = pd.cut(tx["TOTAL_NETT"], bins=bins, labels=labels, right=True)
+        result = tx.groupby("BASKET", observed=True).agg(
+            JUMLAH_TRANSAKSI=("NOTRAN", "count"),
+            JUMLAH_QTY=("TOTAL_QTY", "sum"),
+            TOTAL_NETT=("TOTAL_NETT", "sum"),
+        ).reset_index()
+        result["RATA-RATA BASKET"] = (result["TOTAL_NETT"] / result["JUMLAH_TRANSAKSI"]).round(0).astype(int)
+        total_tx = result["JUMLAH_TRANSAKSI"].sum()
+        total_rev = result["TOTAL_NETT"].sum()
+        result["% TRANSAKSI"] = (result["JUMLAH_TRANSAKSI"] / total_tx * 100).round(2) if total_tx else 0.0
+        result["% REVENUE"] = (result["TOTAL_NETT"] / total_rev * 100).round(2) if total_rev else 0.0
+        result = result.rename(columns={
+            "JUMLAH_TRANSAKSI": "JUMLAH TRANSAKSI",
+            "JUMLAH_QTY": "JUMLAH QTY",
+            "TOTAL_NETT": "TOTAL NETT",
+        })
+        cols = ["BASKET", "JUMLAH TRANSAKSI", "JUMLAH QTY", "TOTAL NETT",
+                "RATA-RATA BASKET", "% TRANSAKSI", "% REVENUE"]
+        return result[cols]
+
+    def basket_by_location(self, lokasi_list: list | None = None,
+                           start=None, end=None, bulan=None) -> pd.DataFrame:
+        df = self.filter_df(start, end)
+        if bulan is not None:
+            bln_list = [bulan] if isinstance(bulan, int) else bulan
+            df = df[df["FDATE"].dt.month.isin(bln_list)]
+        tx = df.groupby(["FLOCCD", "NOTRAN"], observed=True).agg(
+            TOTAL_NETT=("LINE_REVENUE", "sum"),
+        ).reset_index()
+        bins = [0, 50000, 100000, 200000, 300000, 500000, 1000000, float("inf")]
+        labels = [
+            "di bawah 50.000",
+            "50.000 - 99.999",
+            "100.000 - 199.999",
+            "200.000 - 299.999",
+            "300.000 - 500.000",
+            "500.001 - 1.000.000",
+            "di atas 1.000.000",
+        ]
+        tx["BASKET"] = pd.cut(tx["TOTAL_NETT"], bins=bins, labels=labels, right=True)
+        tx["FLOCCD_STR"] = tx["FLOCCD"].astype(str)
+        pivot = tx.pivot_table(
+            index="BASKET", columns="FLOCCD_STR", values="NOTRAN",
+            aggfunc="count", fill_value=0, observed=True,
+        )
+        if lokasi_list:
+            lokasi_str = [str(l) for l in lokasi_list]
+            avail = [c for c in lokasi_str if c in pivot.columns]
+            pivot = pivot[avail] if avail else pd.DataFrame(index=pivot.index)
+        pivot.columns = [f"LOKASI {c}" for c in pivot.columns]
+        pivot = pivot.reset_index()
+        return pivot
+
     # ---------- EXPORT ----------
     def export(self, output_path: str, top_n: int = 20) -> str:
         with pd.ExcelWriter(output_path, engine="openpyxl") as w:
@@ -1368,6 +1442,12 @@ class BundleAnalyzer:
             self.non_bundle_summary().to_excel(
                 w, sheet_name="NonBundle_Reff", index=False
             )
+            bsk = self.basket_analysis()
+            if not bsk.empty:
+                bsk.to_excel(w, sheet_name="Basket_Analysis", index=False)
+            bsk_loc = self.basket_by_location()
+            if not bsk_loc.empty:
+                bsk_loc.to_excel(w, sheet_name="Basket_per_Lokasi", index=False)
         return output_path
 
     @staticmethod
