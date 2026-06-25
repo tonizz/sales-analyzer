@@ -1364,73 +1364,60 @@ with tabs[10]:
 with tabs[11]:
     st.markdown('<div class="section-header">🧺 Analisis Basket Transaksi</div>', unsafe_allow_html=True)
     st.caption("Distribusi nilai transaksi berdasarkan total nett per NOTRAN.")
-    col1, col2, col3, col4 = st.columns([2, 1, 2, 1])
-    with col1:
-        bl = st.selectbox("Filter Lokasi", ["Semua"] + sorted(df["FLOCCD"].unique().tolist()), key="bsk_loc")
-        floocd_val = None if bl == "Semua" else bl
-    with col2:
+    if df is None or df.empty or "FDATE" not in df.columns:
+        st.warning("Data tidak tersedia. Upload file dan klik **🚀 Proses Data** di sidebar.")
+    else:
+        locs = sorted(df["FLOCCD"].unique().tolist())
         bulan_list = sorted(df["FDATE"].dt.month.unique().tolist())
-        bulan_terpilih = st.multiselect(
-            "Filter Bulan", bulan_list,
-            default=bulan_list, key="bsk_bln",
-        )
-        bulan_val = bulan_terpilih if bulan_terpilih and len(bulan_terpilih) < len(bulan_list) else None
-    with col3:
-        lokasi_pilihan = st.multiselect(
-            "Pilih Lokasi untuk kolom per-lokasi",
-            sorted(df["FLOCCD"].unique().tolist()),
-            key="bsk_loks",
-        )
-    with col4:
-        st.markdown("<br>", unsafe_allow_html=True)
-        run_bsk = st.button("🔄 Proses Basket", type="primary", use_container_width=True)
-    if run_bsk:
-        try:
-            basket_df = a.basket_analysis(floocd=floocd_val, bulan=bulan_val)
-            if basket_df.empty:
-                st.warning("Tidak ada data.")
-            else:
-                basket_df["TOTAL NETT"] = basket_df["TOTAL NETT"].round(0).astype(int)
-                basket_df["RATA-RATA BASKET"] = basket_df["RATA-RATA BASKET"].round(0).astype(int)
-                st.subheader("📊 Distribusi Basket")
-                cola, colb = st.columns([3, 2])
-                with cola:
-                    fig1 = px.bar(
-                        basket_df, x="BASKET", y="JUMLAH TRANSAKSI",
-                        title="Jumlah Transaksi per Basket",
-                        text_auto=True, color="% TRANSAKSI",
-                        color_continuous_scale="Blues",
-                    )
-                    fig1.update_layout(xaxis_title="Range Basket", yaxis_title="Transaksi")
-                    st.plotly_chart(fig1, use_container_width=True)
-                with colb:
-                    fig2 = px.pie(
-                        basket_df, values="% REVENUE", names="BASKET",
-                        title="Kontribusi Revenue per Basket",
-                    )
-                    fig2.update_traces(textposition="inside", textinfo="label+percent")
-                    st.plotly_chart(fig2, use_container_width=True)
-                st.subheader("📋 Tabel Basket")
-                fmt = {"TOTAL NETT": "Rp{:,.0f}", "RATA-RATA BASKET": "Rp{:,.0f}"}
-                st.dataframe(
-                    basket_df.style.format(fmt),
-                    use_container_width=True, hide_index=True, height=350,
-                )
-                if lokasi_pilihan:
-                    st.subheader("🏪 Perbandingan per Lokasi")
-                by_loc = a.basket_by_location(lokasi_pilihan, bulan=bulan_val)
-                if not by_loc.empty:
-                    st.dataframe(by_loc, use_container_width=True, hide_index=True, height=300)
-                    fig3 = px.bar(
-                        by_loc.melt(id_vars="BASKET", var_name="LOKASI", value_name="TRANSAKSI"),
-                        x="BASKET", y="TRANSAKSI", color="LOKASI", barmode="group",
-                        title="Perbandingan Basket per Lokasi",
-                    )
-                    st.plotly_chart(fig3, use_container_width=True)
-                csv = basket_df.to_csv(index=False).encode()
-                st.download_button("⬇️ Download CSV", csv, "basket_analysis.csv", "text/csv")
-        except Exception as e:
-            st.error(f"Error: {e}")
+        col1, col2, col3, col4 = st.columns([2, 1, 2, 1])
+        with col1:
+            bl = st.selectbox("Filter Lokasi", ["Semua"] + locs, key="bsk_loc")
+            floocd_val = None if bl == "Semua" else bl
+        with col2:
+            bulan_terpilih = st.multiselect("Filter Bulan", bulan_list, default=bulan_list, key="bsk_bln")
+            bulan_val = bulan_terpilih if bulan_terpilih and len(bulan_terpilih) < len(bulan_list) else None
+        with col3:
+            lokasi_pilihan = st.multiselect("Pilih Lokasi pembanding", locs, key="bsk_loks")
+        with col4:
+            st.markdown("<br>", unsafe_allow_html=True)
+            run_bsk = st.button("🔄 Proses Basket", type="primary", use_container_width=True)
+        if run_bsk:
+            try:
+                basket_df = a.basket_analysis(floocd=floocd_val, bulan=bulan_val)
+                if basket_df.empty:
+                    st.warning("Tidak ada data.")
+                else:
+                    basket_df["TOTAL NETT"] = basket_df["TOTAL NETT"].round(0).astype(int)
+                    basket_df["RATA-RATA BASKET"] = basket_df["RATA-RATA BASKET"].round(0).astype(int)
+                    st.subheader("📊 Distribusi Basket")
+                    cola, colb = st.columns([3, 2])
+                    with cola:
+                        fig1 = px.bar(basket_df, x="BASKET", y="JUMLAH TRANSAKSI",
+                                      title="Jumlah Transaksi per Basket", text_auto=True,
+                                      color="% TRANSAKSI", color_continuous_scale="Blues")
+                        fig1.update_layout(xaxis_title="Range Basket", yaxis_title="Transaksi")
+                        st.plotly_chart(fig1, use_container_width=True)
+                    with colb:
+                        fig2 = px.pie(basket_df, values="% REVENUE", names="BASKET",
+                                      title="Kontribusi Revenue per Basket")
+                        fig2.update_traces(textposition="inside", textinfo="label+percent")
+                        st.plotly_chart(fig2, use_container_width=True)
+                    st.subheader("📋 Tabel Basket")
+                    fmt = {"TOTAL NETT": "Rp{:,.0f}", "RATA-RATA BASKET": "Rp{:,.0f}"}
+                    st.dataframe(basket_df.style.format(fmt), use_container_width=True, hide_index=True, height=350)
+                    if lokasi_pilihan:
+                        st.subheader("🏪 Perbandingan per Lokasi")
+                        by_loc = a.basket_by_location(lokasi_pilihan, bulan=bulan_val)
+                        if not by_loc.empty:
+                            st.dataframe(by_loc, use_container_width=True, hide_index=True, height=300)
+                            fig3 = px.bar(by_loc.melt(id_vars="BASKET", var_name="LOKASI", value_name="TRANSAKSI"),
+                                          x="BASKET", y="TRANSAKSI", color="LOKASI", barmode="group",
+                                          title="Perbandingan Basket per Lokasi")
+                            st.plotly_chart(fig3, use_container_width=True)
+                    csv = basket_df.to_csv(index=False).encode()
+                    st.download_button("⬇️ Download CSV", csv, "basket_analysis.csv", "text/csv")
+            except Exception as e:
+                st.error(f"Error: {e}")
 
 # Footer
 st.markdown("---")
