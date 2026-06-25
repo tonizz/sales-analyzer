@@ -1364,11 +1364,12 @@ with tabs[10]:
 with tabs[11]:
     st.markdown('<div class="section-header">🧺 Analisis Basket Transaksi</div>', unsafe_allow_html=True)
     st.caption("Distribusi nilai transaksi berdasarkan total nett per NOTRAN.")
-    if df is None or df.empty or "FDATE" not in df.columns:
-        st.warning("Data tidak tersedia. Upload file dan klik **🚀 Proses Data** di sidebar.")
+    _df_b = a.df if a is not None and hasattr(a, "df") and a.df is not None and not a.df.empty and "FDATE" in a.df.columns else None
+    if _df_b is None:
+        st.warning("Data kosong setelah filter. Penyebab paling umum: **filter FLOCCD** di sidebar kiri terlalu ketat (kosongkan jika ragu). Upload ulang & klik **🚀 Proses Data**.")
     else:
-        locs = sorted(df["FLOCCD"].unique().tolist())
-        bulan_list = sorted(df["FDATE"].dt.month.unique().tolist())
+        locs = sorted(_df_b["FLOCCD"].unique().tolist())
+        bulan_list = sorted(_df_b["FDATE"].dt.month.unique().tolist())
         col1, col2, col3, col4 = st.columns([2, 1, 2, 1])
         with col1:
             bl = st.selectbox("Filter Lokasi", ["Semua"] + locs, key="bsk_loc")
