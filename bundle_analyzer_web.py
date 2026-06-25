@@ -580,16 +580,19 @@ with tabs[0]:
                 st.plotly_chart(fig_mbd, use_container_width=True)
 
         # Download (multi-sheet)
-        sheets = {"Summary_Lokasi": sm, "Ringkasan_Bulan_Lokasi": msl}
-        if not mbd.empty:
-            sheets["Detail_Bundle"] = mbd
-        excel = to_excel_bytes(sheets)
-        st.download_button(
-            "📥 Download Summary (Excel)",
-            data=excel,
-            file_name="summary_lokasi.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+        try:
+            sheets = {"Summary_Lokasi": sm, "Ringkasan_Bulan_Lokasi": msl}
+            if not mbd.empty:
+                sheets["Detail_Bundle"] = mbd
+            excel_bytes = to_excel_bytes(sheets)
+            st.download_button(
+                "📥 Download Summary (Excel)",
+                data=excel_bytes,
+                file_name="summary_lokasi.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        except Exception as e:
+            st.caption(f"⚠️ Excel download tidak tersedia: {e}")
 
 # ---------------- TAB 2: DISTRIBUSI DISKON ----------------
 with tabs[1]:

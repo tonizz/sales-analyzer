@@ -471,31 +471,31 @@ class BundleAnalyzer:
         return a.merge(bv, on="YM", how="left").fillna(0)
 
     def monthly_summary_by_location(self, start=None, end=None, floocd=None):
-        """
-        Ringkasan per (Lokasi, Tahun, Bulan):
-          KODE LOKASI | NAMA LOKASI | TAHUN | BULAN | TOTAL QTY PAKET | TOTAL QTY SATUAN
-        """
         df = self.filter_df(start, end, floocd).copy()
         if df.empty:
             return pd.DataFrame(columns=["KODE LOKASI", "NAMA LOKASI", "TAHUN", "BULAN",
                                           "TOTAL QTY PAKET", "TOTAL QTY SATUAN"])
+        has_fnama = "FNAMA" in df.columns
+        if has_fnama:
+            gcols = ["FLOCCD", "FNAMA", "TAHUN", "BULAN"]
+            rmap = {"FLOCCD": "KODE LOKASI", "FNAMA": "NAMA LOKASI"}
+        else:
+            df["NAMA_LOKASI"] = df["FLOCCD"].astype(str)
+            gcols = ["FLOCCD", "NAMA_LOKASI", "TAHUN", "BULAN"]
+            rmap = {"FLOCCD": "KODE LOKASI", "NAMA_LOKASI": "NAMA LOKASI"}
         df["TAHUN"] = df["FDATE"].dt.year
         df["BULAN"] = df["FDATE"].dt.month
         b = df[df["IS_BUNDLE"]].copy()
         nb = df[~df["IS_BUNDLE"]].copy()
-        bq = b.groupby(["FLOCCD", "FNAMA", "TAHUN", "BULAN"])["QTY"].sum().reset_index(name="TOTAL QTY PAKET")
-        nbq = nb.groupby(["FLOCCD", "FNAMA", "TAHUN", "BULAN"])["QTY"].sum().reset_index(name="TOTAL QTY SATUAN")
-        result = bq.merge(nbq, on=["FLOCCD", "FNAMA", "TAHUN", "BULAN"], how="outer").fillna(0)
+        bq = b.groupby(gcols)["QTY"].sum().reset_index(name="TOTAL QTY PAKET")
+        nbq = nb.groupby(gcols)["QTY"].sum().reset_index(name="TOTAL QTY SATUAN")
+        result = bq.merge(nbq, on=gcols, how="outer").fillna(0)
         result["TOTAL QTY PAKET"] = result["TOTAL QTY PAKET"].astype(int)
         result["TOTAL QTY SATUAN"] = result["TOTAL QTY SATUAN"].astype(int)
-        result = result.rename(columns={"FLOCCD": "KODE LOKASI", "FNAMA": "NAMA LOKASI"})
+        result = result.rename(columns=rmap)
         return result.sort_values(["KODE LOKASI", "TAHUN", "BULAN"]).reset_index(drop=True)
 
     def monthly_bundle_detail(self, start=None, end=None, floocd=None):
-        """
-        Detail bundle per (Lokasi, Tahun, Bulan):
-          KODE LOKASI | TAHUN | BULAN | NAMA LOKASI | ITEM BUNDLE | HARGA PER PAKET
-        """
         df = self.filter_df(start, end, floocd).copy()
         if df.empty:
             return pd.DataFrame(columns=["KODE LOKASI", "TAHUN", "BULAN", "NAMA LOKASI",
@@ -504,22 +504,29 @@ class BundleAnalyzer:
         if b.empty:
             return pd.DataFrame(columns=["KODE LOKASI", "TAHUN", "BULAN", "NAMA LOKASI",
                                           "ITEM BUNDLE", "QTY TERJUAL", "HARGA PER PAKET"])
+        has_fnama = "FNAMA" in b.columns
+        if has_fnama:
+            gcols = ["FLOCCD", "FNAMA", "TAHUN", "BULAN", "NOTRAN"]
+            rmap = {"FLOCCD": "KODE LOKASI", "FNAMA": "NAMA LOKASI"}
+        else:
+            b["NAMA_LOKASI"] = b["FLOCCD"].astype(str)
+            gcols = ["FLOCCD", "NAMA_LOKASI", "TAHUN", "BULAN", "NOTRAN"]
+            rmap = {"FLOCCD": "KODE LOKASI", "NAMA_LOKASI": "NAMA LOKASI"}
         b["TAHUN"] = b["FDATE"].dt.year
         b["BULAN"] = b["FDATE"].dt.month
-        # Group items in each NOTRAN to form bundle combo
-        combo = b.groupby(["FLOCCD", "FNAMA", "TAHUN", "BULAN", "NOTRAN"]).agg(
+        combo = b.groupby(gcols).agg(
             ITEM_BUNDLE=("NAMA_BRG", lambda x: " + ".join(sorted(x))),
             HARGA_PER_PAKET=("LINE_REVENUE", "sum"),
             QTY_PAKET=("QTY", "sum"),
         ).reset_index()
-        # Aggregate unique combos per location per month
-        detail = combo.groupby(["FLOCCD", "TAHUN", "BULAN", "FNAMA", "ITEM_BUNDLE"]).agg(
+        nama_col = "FNAMA" if has_fnama else "NAMA_LOKASI"
+        detail = combo.groupby(["FLOCCD", nama_col, "TAHUN", "BULAN", "ITEM_BUNDLE"]).agg(
             QTY_TERJUAL=("QTY_PAKET", "sum"),
             HARGA_PER_PAKET=("HARGA_PER_PAKET", "mean"),
         ).reset_index()
         detail["HARGA_PER_PAKET"] = detail["HARGA_PER_PAKET"].round(0).astype(int)
         detail["QTY_TERJUAL"] = detail["QTY_TERJUAL"].astype(int)
-        detail = detail.rename(columns={"FLOCCD": "KODE LOKASI", "FNAMA": "NAMA LOKASI"})
+        detail = detail.rename(columns={"FLOCCD": "KODE LOKASI", nama_col: "NAMA LOKASI"})
         return detail.sort_values(["KODE LOKASI", "TAHUN", "BULAN", "QTY_TERJUAL"],
                                    ascending=[True, True, True, False]).reset_index(drop=True)
 
