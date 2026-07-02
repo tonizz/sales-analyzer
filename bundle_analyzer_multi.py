@@ -286,9 +286,9 @@ class MultiYearAnalyzer:
     # FORECAST (multi-year linear trend)
     # ========================================================================
     def forecast_aggregate(self, months_ahead: int = 6) -> pd.DataFrame:
-        """Forecast N bulan ke depan pakai Linear Regression dari SEMUA tahun.
-        Per FLOCCD untuk akurasi lebih baik."""
-        from sklearn.linear_model import LinearRegression
+        """Forecast N bulan ke depan pakai Gradient Boosting dari SEMUA tahun.
+        Per FLOCCD untuk akurasi lebih baik dan deteksi musiman."""
+        from sklearn.ensemble import GradientBoostingRegressor
 
         self._check_loaded()
         results = []
@@ -298,19 +298,19 @@ class MultiYearAnalyzer:
             monthly["Period"] = range(len(monthly))
             if len(monthly) < 3:
                 continue
-            X = monthly[["Period"]].values
+            X = monthly[["Period", "MONTH"]].values
             y = monthly["LINE_NETT"].values.astype(float)
-            model = LinearRegression()
+            model = GradientBoostingRegressor(random_state=42)
             model.fit(X, y)
             last_period = int(monthly["Period"].max())
             last_ym = self._last_ym()
             for i in range(1, months_ahead + 1):
                 fut_period = last_period + i
-                pred = float(model.predict([[fut_period]])[0])
                 # estimate month/year
                 m = last_ym[1] + i
                 yr = last_ym[0] + (m - 1) // 12
                 m = ((m - 1) % 12) + 1
+                pred = float(model.predict([[fut_period, m]])[0])
                 # actual from last year for comparison
                 prev_yr = yr - 1
                 prev_actual = sub[(sub["YEAR"] == prev_yr) & (sub["MONTH"] == m)]["LINE_NETT"].sum()
@@ -534,21 +534,42 @@ class MultiYearAnalyzer:
         return plu, desc
 
     def linear_trend(self) -> tuple[pd.DataFrame, np.ndarray, float]:
-        """Linear Regression: tren revenue bulanan semua tahun."""
-        from sklearn.linear_model import LinearRegression
+        """Gradient Boosting: tren revenue bulanan semua tahun dengan musiman."""
+        from sklearn.ensemble import GradientBoostingRegressor
 
         self._check_loaded()
         monthly = self.all_monthly()
         monthly["Period"] = range(len(monthly))
-        X = monthly[["Period"]].values
+        
+        # Tambahkan fitur MONTH dari YM
+        if "YM" in monthly.columns:
+            monthly["MONTH"] = monthly["YM"].str.split("-").str[1].astype(int)
+        else:
+            monthly["MONTH"] = 1
+            
+        X = monthly[["Period", "MONTH"]].values
         y = monthly["Revenue"].values.astype(float)
-        model = LinearRegression()
+        
+        model = GradientBoostingRegressor(random_state=42)
         model.fit(X, y)
         monthly["Trend"] = model.predict(X).round(0)
-        slope = float(model.coef_[0])
+        
+        # Hitung effective slope
+        slope = 0.0
+        if len(monthly) > 1:
+            slope = float(monthly["Trend"].iloc[-1] - monthly["Trend"].iloc[0]) / len(monthly)
+            
         last = int(monthly["Period"].max())
-        fut_X = np.arange(last + 1, last + 7).reshape(-1, 1)
-        fut_y = model.predict(fut_X).round(0)
+        last_m = int(monthly["MONTH"].iloc[-1])
+        
+        fut_X = []
+        for i in range(1, 7):
+            fut_period = last + i
+            m_next = last_m + i
+            m_next = ((m_next - 1) % 12) + 1
+            fut_X.append([fut_period, m_next])
+            
+        fut_y = model.predict(np.array(fut_X)).round(0)
         return monthly, fut_y, slope
 
     # ========================================================================

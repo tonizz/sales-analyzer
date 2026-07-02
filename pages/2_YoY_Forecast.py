@@ -259,10 +259,10 @@ with tab[2]:
 
 # --- TAB 4: FORECAST ---
 with tab[3]:
-    st.markdown(f"### 🔮 Forecast ({m.years[-1]}+) — Linear Regression per Lokasi")
+    st.markdown(f"### 🔮 Forecast ({m.years[-1]}+) — Machine Learning (Gradient Boosting) per Lokasi")
     st.caption(
-        "Metode: Linear Regression dari SEMUA tahun data per lokasi. "
-        "Prediksi 6 bulan ke depan dari data terakhir."
+        "Metode: Gradient Boosting Regressor dari SEMUA tahun data per lokasi. "
+        "Model ini membaca pola musiman bulanan. Prediksi 6 bulan ke depan dari data terakhir."
     )
     fc = m.forecast_aggregate()
     st.dataframe(fc, use_container_width=True, hide_index=True, height=500)
@@ -508,23 +508,23 @@ with tab[9]:
 
     st.divider()
 
-    st.markdown("### 2️⃣ Linear Regression — Tren Revenue Bulanan")
+    st.markdown("### 2️⃣ Machine Learning (Gradient Boosting) — Tren Musiman")
     st.caption(
-        "**Cara kerja**: ML menarik **garis lurus terbaik** (best-fit line) "
+        "**Cara kerja**: ML membentuk **kurva prediksi** yang "
         "melalui titik-titik revenue bulanan. Garis ini adalah **model** yang sudah "
-        "'belajar' dari data. Slope garis = estimasi kenaikan/penurunan revenue per bulan. "
-        "Model bisa memprediksi 6 bulan ke depan dengan melanjutkan garis tersebut."
+        "'belajar' dari data, termasuk *seasonality* (musiman). Nilai rata-rata perubahan di bawah ini adalah estimasi "
+        "kenaikan/penurunan keseluruhan. Model memprediksi 6 bulan ke depan."
     )
 
-    with st.spinner("⏳ Linear regression..."):
+    with st.spinner("⏳ ML Forecasting..."):
         try:
             monthly_ml, fut_pred, slope = m.linear_trend()
         except Exception as e:
-            st.error(f"LinReg error: {e}")
+            st.error(f"ML error: {e}")
             st.stop()
 
     trend_sign = "📈 naik" if slope > 0 else "📉 turun"
-    st.metric("Slope (perubahan revenue per bulan)",
+    st.metric("Rata-rata perubahan revenue per bulan",
               f"{trend_sign} Rp {abs(slope):,.0f}",
               f"{slope:+.0f}")
 
@@ -538,7 +538,7 @@ with tab[9]:
     ))
     fig3.add_trace(go.Scatter(
         x=monthly_ml["YM"], y=monthly_ml["Trend"],
-        mode="lines", name="Trend (Linear Regression)",
+        mode="lines", name="Trend (ML Model)",
         line=dict(color="red", dash="dash"),
     ))
 
