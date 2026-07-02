@@ -518,7 +518,7 @@ tabs = st.tabs(
         "💰 Margin",
         "📊 Perbandingan",
         "📈 Trend",
-        "📋 Item Satuan",
+        "📋 Top & Satuan",
         "📦 Strategi Penjualan",
         "🧺 Basket",
     ]
@@ -768,8 +768,23 @@ with tabs[6]:
     st.markdown('<div class="section-header">💰 Analisa Margin</div>', unsafe_allow_html=True)
     st.warning(
         "⚠️ Kolom `PRC_HIP` di data contoh adalah PLACEHOLDER (nilai 100). "
-        "Gunakan field 'Asumsi biaya' di bawah untuk hasil yang akurat."
+        "Gunakan Master Cost atau Asumsi biaya di bawah untuk hasil yang akurat."
     )
+    
+    st.markdown("#### Master Cost (Opsional)")
+    cost_file = st.file_uploader(
+        "Upload file Excel Master Cost (wajib ada kolom PLU dan COST). Jika diisi, 'Asumsi Biaya' di bawah akan diabaikan (kecuali untuk barang yang tidak ada di master).",
+        type=["xlsx", "xls"],
+        key="cost_uploader",
+    )
+    if cost_file is not None:
+        try:
+            df_c = pd.read_excel(cost_file)
+            a.load_master_cost(df_c)
+            st.success(f"✅ Master Cost dimuat ({len(df_c):,} baris).")
+        except Exception as e:
+            st.error(f"Gagal memuat Master Cost: {e}")
+
     cost_assumption = st.number_input(
         "Asumsi biaya (% dari JUALAHIR). 0 = pakai PRC_HIP",
         min_value=0.0, max_value=100.0, value=30.0, step=1.0, key="mg_cost",
@@ -998,7 +1013,8 @@ with tabs[9]:
     sub = st.tabs([
         "📊 Ringkasan",
         "📋 Detail",
-        "🏆 Top Item",
+        "🏆 Top Item Satuan",
+        "🏆 Top Keseluruhan",
         "📈 Dist. Diskon",
         "🔍 Cari Item",
     ])
@@ -1073,8 +1089,37 @@ with tabs[9]:
                 key="dl_tp1",
             )
 
-    # ---------- Sub-tab 4: Distribusi Diskon Item ----------
+    # ---------- Sub-tab 4: Top Keseluruhan ----------
     with sub[3]:
+        st.caption("Item Paling Laris Gabungan (Bundle + Satuan).")
+        n_top_all = st.slider("Top N Keseluruhan", 5, 50, 20, key="top_all_n")
+        top_all = a.top_all_items(top_n=n_top_all)
+        if top_all.empty:
+            st.warning("Tidak ada data.")
+        else:
+            fig_all = px.bar(
+                top_all,
+                x="TOTAL_QTY",
+                y="NAMA_BRG",
+                orientation="h",
+                color="TOTAL_REVENUE_GROSS",
+                color_continuous_scale="Plasma",
+                title=f"Top {n_top_all} Item Keseluruhan",
+                labels={"TOTAL_QTY": "Total QTY", "NAMA_BRG": ""},
+            )
+            fig_all.update_layout(yaxis={"categoryorder": "total ascending"}, height=500)
+            st.plotly_chart(fig_all, use_container_width=True)
+            st.dataframe(top_all, use_container_width=True, hide_index=True, height=400)
+            st.download_button(
+                "📥 Download Top Keseluruhan (Excel)",
+                data=to_excel_bytes({"Top_Keseluruhan": top_all}),
+                file_name="top_keseluruhan.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_top_all",
+            )
+
+    # ---------- Sub-tab 5: Distribusi Diskon Item ----------
+    with sub[4]:
         dd1 = a.single_item_discount_dist()
         if dd1.empty:
             st.warning("Tidak ada data.")
@@ -1101,8 +1146,8 @@ with tabs[9]:
                 key="dl_dd1",
             )
 
-    # ---------- Sub-tab 5: Cari Item Satuan ----------
-    with sub[4]:
+    # ---------- Sub-tab 6: Cari Item Satuan ----------
+    with sub[5]:
         st.caption("Cari baris item satuan (per-item, bukan per-paket) yang mengandung keyword.")
         sc1, sc2, sc3, sc4 = st.columns([2, 1, 1, 1])
         with sc1:
@@ -1153,6 +1198,20 @@ with tabs[10]:
         "Identifikasi **slow moving**, **dead stock**, dan dapatkan **rekomendasi promosi** "
         "berbasis data untuk bulan depan."
     )
+    
+    st.markdown("#### Data Stok (Opsional)")
+    stock_file = st.file_uploader(
+        "Upload file Excel Stok (wajib ada kolom FLOCCD, PLU, dan SISA_STOK). Jika diisi, kolom STOCK_COVER_DAYS akan muncul di analisa di bawah.",
+        type=["xlsx", "xls"],
+        key="stock_uploader",
+    )
+    if stock_file is not None:
+        try:
+            df_s = pd.read_excel(stock_file)
+            a.load_stock_data(df_s)
+            st.success(f"✅ Data Stok dimuat ({len(df_s):,} baris).")
+        except Exception as e:
+            st.error(f"Gagal memuat Data Stok: {e}")
 
     strat_tabs = st.tabs([
         "🐌 Slow Moving",

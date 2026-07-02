@@ -31,6 +31,8 @@ class BundleAnalyzer:
     def __init__(self):
         self.df: pd.DataFrame | None = None
         self.filepath: str | None = None
+        self.df_cost: pd.DataFrame | None = None
+        self.df_stock: pd.DataFrame | None = None
 
     # ---------- LOAD ----------
     def load(self, filepath: str) -> pd.DataFrame:
@@ -42,6 +44,14 @@ class BundleAnalyzer:
         if "FDATE" in self.df.columns:
             self.df["FDATE"] = pd.to_datetime(self.df["FDATE"])
         return self.df
+
+    def load_master_cost(self, df_cost: pd.DataFrame):
+        # Harus punya kolom PLU dan COST
+        self.df_cost = df_cost
+
+    def load_stock_data(self, df_stock: pd.DataFrame):
+        # Harus punya kolom FLOCCD, PLU, SISA_STOK
+        self.df_stock = df_stock
 
     # ---------- CLASSIFY ----------
     def classify(self, min_items: int = 2, min_discount: float = 0.0,
@@ -660,6 +670,36 @@ class BundleAnalyzer:
             .reset_index(drop=True)
         )
 
+    def top_all_items(
+        self, top_n: int = 20, floocd=None, start=None, end=None,
+    ) -> pd.DataFrame:
+        """Item paling laris keseluruhan (Bundle + Satuan)."""
+        df = self.filter_df(start, end, floocd)
+        out_cols = [
+            "PLU", "NAMA_BRG", "JUMLAH_TX", "TOTAL_QTY",
+            "TOTAL_REVENUE_JUMLAH", "TOTAL_REVENUE_GROSS", "AVG_PRICE",
+        ]
+        if df.empty:
+            return pd.DataFrame(columns=out_cols)
+        grp = df.groupby(["PLU", "NAMA_BRG"], as_index=False).agg(
+            JUMLAH_TX=("NOTRAN", "nunique"),
+            TOTAL_QTY=("QTY", "sum"),
+            TOTAL_REVENUE_JUMLAH=("JUMLAH", "sum"),
+            AVG_PRICE=("JUALAHIR", "mean"),
+        ).round(2)
+        
+        gross = df.assign(GROSS=df["JUALAHIR"] * df["QTY"])
+        gross_sum = gross.groupby(["PLU", "NAMA_BRG"])["GROSS"].sum().reset_index()
+        
+        grp = grp.merge(gross_sum, on=["PLU", "NAMA_BRG"], how="left")
+        grp = grp.rename(columns={"GROSS": "TOTAL_REVENUE_GROSS"})
+        
+        return (
+            grp.sort_values("TOTAL_QTY", ascending=False)
+            .head(top_n)
+            .reset_index(drop=True)
+        )
+
     def single_item_discount_dist(
         self, floocd=None, start=None, end=None,
     ) -> pd.DataFrame:
@@ -772,17 +812,25 @@ class BundleAnalyzer:
         is_placeholder = (n_unique <= 2) and (
             (set(unique_vals) <= {0, 100}) or (set(unique_vals) <= {0})
         )
+        has_master_cost = getattr(self, "df_cost", None) is not None and not self.df_cost.empty
         data_quality = {
-            "valid": not is_placeholder or cost_pct_assumption is not None,
+            "valid": has_master_cost or not is_placeholder or cost_pct_assumption is not None,
             "placeholder_detected": is_placeholder,
             "unique_cost_values": n_unique,
             "using_assumption": cost_pct_assumption is not None,
             "cost_pct_assumption": cost_pct_assumption,
+            "using_master_cost": has_master_cost,
         }
-        if cost_pct_assumption is not None:
-            df["EFF_COST"] = df["JUALAHIR"] * (cost_pct_assumption / 100.0)
+        
+        fallback_cost = df["JUALAHIR"] * (cost_pct_assumption / 100.0) if cost_pct_assumption is not None else ph
+        if has_master_cost:
+            df["PLU_STR"] = df["PLU"].astype(str)
+            self.df_cost["PLU_STR"] = self.df_cost["PLU"].astype(str)
+            df = df.merge(self.df_cost[["PLU_STR", "COST"]], on="PLU_STR", how="left")
+            df["EFF_COST"] = df["COST"].fillna(fallback_cost)
         else:
-            df["EFF_COST"] = ph
+            df["EFF_COST"] = fallback_cost
+
         df["MARGIN_UNIT"] = df["JUALAHIR"] - df["EFF_COST"]
         df["MARGIN_TOTAL"] = df["MARGIN_UNIT"] * df["QTY"]
         df["MARGIN_PCT"] = df.apply(
@@ -838,6 +886,34 @@ class BundleAnalyzer:
         per_loc_df = per_loc_df.sort_values("Bundle_Margin", ascending=False).reset_index(drop=True)
         return summary, per_loc_df, data_quality
 
+    def _merge_stock_data(self, df_grp: pd.DataFrame) -> pd.DataFrame:
+        has_stock = getattr(self, "df_stock", None) is not None and not self.df_stock.empty
+        if not has_stock:
+            if "SISA_STOK" not in df_grp.columns:
+                df_grp["SISA_STOK"] = np.nan
+            if "STOCK_COVER_DAYS" not in df_grp.columns:
+                df_grp["STOCK_COVER_DAYS"] = np.nan
+            return df_grp
+            
+        df_grp["PLU_STR"] = df_grp["PLU"].astype(str)
+        df_grp["FLOCCD_STR"] = df_grp["FLOCCD"].astype(str)
+        stock = self.df_stock.copy()
+        stock["PLU_STR"] = stock["PLU"].astype(str)
+        stock["FLOCCD_STR"] = stock["FLOCCD"].astype(str)
+        
+        df_grp = df_grp.merge(stock[["FLOCCD_STR", "PLU_STR", "SISA_STOK"]], on=["FLOCCD_STR", "PLU_STR"], how="left")
+        
+        if "AVG_DAILY_QTY" in df_grp.columns:
+            df_grp["STOCK_COVER_DAYS"] = df_grp.apply(
+                lambda x: (x["SISA_STOK"] / x["AVG_DAILY_QTY"]) if pd.notnull(x["SISA_STOK"]) and pd.notnull(x["AVG_DAILY_QTY"]) and x["AVG_DAILY_QTY"] > 0 else np.nan, 
+                axis=1
+            ).round(1)
+        else:
+            df_grp["STOCK_COVER_DAYS"] = np.nan
+            
+        df_grp = df_grp.drop(columns=["PLU_STR", "FLOCCD_STR"])
+        return df_grp
+
     # ===== STRATEGI PENJUALAN =====
     def slow_moving_items(
         self,
@@ -881,6 +957,7 @@ class BundleAnalyzer:
         grp["FIRST_SALE_DATE"] = pd.to_datetime(grp["FIRST_SALE_DATE"])
         grp["AVG_DAILY_QTY"] = (grp["TOTAL_QTY"] / n_days).round(3)
         grp["DAYS_SINCE_SALE"] = (date_max - grp["LAST_SALE_DATE"]).dt.days
+        grp = self._merge_stock_data(grp)
         grp = grp[grp["TOTAL_QTY"] >= min_total_qty].copy()
         result = {}
         # View 1: bottom_pct
@@ -1004,6 +1081,7 @@ class BundleAnalyzer:
             (lifetime["LAST_SALE_DATE"] < cutoff) & (lifetime["LIFETIME_QTY"] >= min_lifetime_qty)
         ].copy()
         dead["DAYS_SINCE_SALE"] = (ref_date - dead["LAST_SALE_DATE"]).dt.days
+        dead = self._merge_stock_data(dead)
         dead["URGENCY"] = dead["DAYS_SINCE_SALE"].apply(
             lambda x: "🔴 Kritis (>90h)" if x > 90
             else "🟠 Tinggi (60-90h)" if x > days
