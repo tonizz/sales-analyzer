@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Stock Opname Scanner — INTEX</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 12px; }
@@ -50,6 +51,7 @@ th { background: #4CAF50; color: white; position: sticky; top: 0; }
     <label>Lokasi</label>
     <input type="text" id="lokasi_code" placeholder="Kode toko, cth: 55464" inputmode="numeric" style="flex:0.4" oninput="lookupLokasi()">
     <div id="lokasi_name" style="flex:1;font-size:14px;color:#1565c0;font-weight:bold">—</div>
+    <button class="btn btn-sm btn-blue" onclick="finishLocation()" style="white-space:nowrap" title="Selesai scan toko ini & ganti toko lain">Selesai ✅</button>
   </div>
 </div>
 
@@ -92,7 +94,8 @@ th { background: #4CAF50; color: white; position: sticky; top: 0; }
   </div>
   <div id="table_wrap" style="max-height:300px;overflow-y:auto"></div>
   <div class="btn-group no-print">
-    <button class="btn btn-blue btn-sm" onclick="exportJSON()">Kirim ke HO</button>
+    <button class="btn btn-blue btn-sm" onclick="saveToServer()">Kirim ke HO</button>
+    <button class="btn btn-green btn-sm" onclick="exportXLSX()" style="font-weight:bold">Export Excel</button>
     <button class="btn btn-blue btn-sm" onclick="exportJSON()">Export JSON</button>
     <button class="btn btn-blue btn-sm" onclick="exportCSV()">Export CSV</button>
     <button class="btn btn-red btn-sm" onclick="clearAll()">Hapus Semua</button>
@@ -140,6 +143,15 @@ function lookupLokasi() {
     lokasiKode = ''; lokasiNama = '';
     document.getElementById('lok_badge').textContent = '—';
     return;
+  }
+  const data = getData();
+  if (data.length > 0 && code !== lokasiKode) {
+    if (!confirm(`Ada ${data.length} item terscan untuk ${lokasiNama || lokasiKode}.\n\nHapus data lama sebelum ganti ke toko ${code}?\nOK = hapus, Batal = biarkan tercampur`)) {
+      document.getElementById('lokasi_code').value = lokasiKode;
+      return;
+    }
+    localStorage.removeItem(STORAGE_KEY);
+    renderTable();
   }
   const nama = lokasiMap[code] || lokasiMap[code.replace(/^0+/,'')] || '';
   lokasiKode = code; lokasiNama = nama;
@@ -235,6 +247,28 @@ function renderTable() {
 function delRow(i) { const d=getData(); d.splice(i,1); saveData(d); }
 function clearAll() { if (confirm('Hapus semua?')) { localStorage.removeItem(STORAGE_KEY); renderTable(); } }
 
+function finishLocation() {
+  const data = getData();
+  const total = data.reduce((s,r) => s+(parseInt(r.qty)||0), 0);
+  const label = lokasiNama || 'Toko';
+  const kode = lokasiKode;
+
+  if (data.length > 0) {
+    if (confirm(`Selesai: ${label} (${kode})\nItem: ${data.length}  Qty: ${total}\n\nOK = Export Excel dulu, lalu hapus.\nBatal = Hanya hapus, tanpa export.`)) {
+      exportXLSX();
+    }
+  }
+
+  localStorage.removeItem(STORAGE_KEY);
+  document.getElementById('lokasi_code').value = '';
+  document.getElementById('lokasi_name').textContent = '—';
+  lokasiKode = ''; lokasiNama = '';
+  document.getElementById('lok_badge').textContent = '—';
+  localStorage.removeItem(LOK_KEY);
+  renderTable();
+  document.getElementById('lokasi_code').focus();
+}
+
 function saveToServer() {
   const data = getData();
   if (data.length === 0) { alert('Belum ada data!'); return; }
@@ -245,6 +279,24 @@ function saveToServer() {
   }).then(r=>r.json()).then(r => {
     if (r.success) alert('Data terkirim ke HO!'); else alert('Error: '+r.error);
   }).catch(e => alert('Gagal kirim: '+e+'\nExport JSON & kirim manual.'));
+}
+
+function exportXLSX() {
+  const data = getData();
+  if (data.length === 0) { alert('Belum ada data!'); return; }
+  const rows = data.map(r => ({
+    'PLU': padPlu(r.plu),
+    'Nama Barang': r.nama || '',
+    'Stok Fisik': parseInt(r.qty) || 0,
+    'Kode Lokasi': r.lokasi_kode || '',
+    'Nama Lokasi': r.lokasi_nama || '',
+    'Tgl Scan': r.ts || ''
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:10},{wch:40},{wch:10},{wch:12},{wch:30},{wch:25}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Opname');
+  XLSX.writeFile(wb, `opname_${lokasiKode || 'hasil'}.xlsx`);
 }
 
 function exportJSON() {

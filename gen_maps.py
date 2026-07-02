@@ -10,6 +10,7 @@ BC_PATH = r"D:\scr\barcodexls.xlsx"
 SA_PATH = r"D:\scr\stok awal januari 2026.xlsx"
 DBKS_PATH = r"D:\scr\DBKSTHN_55_2026.xlsx"
 OUT_DIR = Path(r"D:\scr")
+DOCS_DIR = OUT_DIR / "docs"
 
 def build_nama_map() -> dict:
     nama = {}
@@ -44,23 +45,28 @@ def build_multi_barcode_map() -> dict:
     dups = dups[dups.apply(len) > 1]
     return dups.to_dict()
 
+def save_json(data, filename):
+    """Simpan ke root (gitignored) dan docs/ (untuk GitHub Pages)."""
+    DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    for d in [OUT_DIR, DOCS_DIR]:
+        with open(d / filename, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        print(f"  -> {d.name}/{filename}")
+
 if __name__ == '__main__':
     print("Building nama map...")
     nama_map = build_nama_map()
-    with open(OUT_DIR / "nama_map.json", "w") as f:
-        json.dump(nama_map, f, indent=2)
+    save_json(nama_map, "nama_map.json")
     print(f"  {len(nama_map)} PLU mapped to names")
 
     print("Building barcode map (single PLU)...")
     bc_map = build_barcode_map()
-    with open(OUT_DIR / "barcode_map.json", "w") as f:
-        json.dump(bc_map, f, indent=2)
+    save_json(bc_map, "barcode_map.json")
     print(f"  {len(bc_map)} barcodes mapped")
 
     print("Building multi-barcode map...")
     multi_map = build_multi_barcode_map()
-    with open(OUT_DIR / "barcode_multi.json", "w") as f:
-        json.dump(multi_map, f, indent=2)
+    save_json(multi_map, "barcode_multi.json")
     print(f"  {len(multi_map)} barcodes with multiple PLU")
 
     print("\nDone! Maps generated.")
