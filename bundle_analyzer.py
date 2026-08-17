@@ -1511,6 +1511,333 @@ class BundleAnalyzer:
         return pivot
 
     # ---------- EXPORT ----------
+    # ===== ANALISA PERFORMA KASIR (fraud detection) =====
+    def kasir_performance(self, start=None, end=None, floocd=None) -> pd.DataFrame:
+        """Performa per kasir + per kombinasi kasir/pramuniaga.
+
+        Metrik: jumlah transaksi, QTY, revenue, bundle %, rata-rata diskon.
+        Diskon rata-rata dihitung per BARIS item (bukan per bundle).
+        """
+        df = self.filter_df(start, end, floocd)
+        if df.empty:
+            return pd.DataFrame()
+        nama_col = "FNAMA" if "FNAMA" in df.columns else None
+
+        def agg(sub: pd.DataFrame) -> pd.DataFrame:
+            grp = sub.groupby(["FLOCCD", "KASIR", "PRAMUNIAGA"])
+            out = grp.agg(
+                JUMLAH_TX=("NOTRAN", "nunique"),
+                TOTAL_QTY=("QTY", "sum"),
+                TOTAL_REVENUE=("LINE_REVENUE", "sum"),
+                AVG_DISC_PCT=("DISCOUNT", "mean"),
+                MAX_DISC_PCT=("DISCOUNT", "max"),
+                BARIS_ITEM=("NOTRAN", "size"),
+            ).reset_index()
+            if "IS_BUNDLE" in sub.columns:
+                b_tx = sub[sub["IS_BUNDLE"]].groupby(["FLOCCD", "KASIR", "PRAMUNIAGA"])["NOTRAN"].nunique().rename("BUNDLE_TX")
+                out = out.merge(b_tx, on=["FLOCCD", "KASIR", "PRAMUNIAGA"], how="left")
+                out["BUNDLE_TX"] = out["BUNDLE_TX"].fillna(0).astype(int)
+                out["BUNDLE_TX_PCT"] = (out["BUNDLE_TX"] / out["JUMLAH_TX"] * 100).round(1)
+            if nama_col:
+                lok = df.groupby("FLOCCD")[nama_col].first().rename("NAMA_LOKASI")
+                out = out.merge(lok, on="FLOCCD", how="left")
+            out["AVG_DISC_PCT"] = out["AVG_DISC_PCT"].round(2)
+            out["AVG_REVENUE_PER_TX"] = (out["TOTAL_REVENUE"] / out["JUMLAH_TX"]).round(0)
+            return out.sort_values("TOTAL_REVENUE", ascending=False).reset_index(drop=True)
+
+        return agg(df)
+
+    def kasir_discount_anomaly(self, z_thresh: float = 2.5, min_tx: int = 20,
+                                start=None, end=None, floocd=None) -> pd.DataFrame:
+        """Deteksi anomali pola diskon per kasir vs rekan di lokasi yang sama.
+
+        Hanya menghitung baris item satuan (non-bundle), karena bundle selalu
+        punya diskon seragam (by design). Z-score berbasis median (robust):
+            Z = (disc_kasir - median_lokasi) / (MAD_lokasi * 1.4826)
+
+        Baris dengan |Z| > z_thresh ditandai ANOMALI.
+        """
+        df = self.filter_df(start, end, floocd)
+        if df.empty or "IS_BUNDLE" not in df.columns:
+            return pd.DataFrame(
+                columns=["FLOCCD", "KASIR", "MEDIAN_DISC_KASIR", "MAD_KASIR",
+                         "MEDIAN_DISC_LOKASI", "Z_SCORE", "JUMLAH_TX",
+                         "BARIS_ITEM", "TOTAL_REVENUE", "STATUS"]
+            )
+        nama_col = "FNAMA" if "FNAMA" in df.columns else None
+        nb = df[~df["IS_BUNDLE"]].copy()
+        if nb.empty:
+            return pd.DataFrame(
+                columns=["FLOCCD", "KASIR", "MEDIAN_DISC_KASIR", "MAD_KASIR",
+                         "MEDIAN_DISC_LOKASI", "Z_SCORE", "JUMLAH_TX",
+                         "BARIS_ITEM", "TOTAL_REVENUE", "STATUS"]
+            )
+
+        def robust_z(s: pd.Series) -> pd.Series:
+            mad = (s - s.median()).abs()
+            base = mad.median() * 1.4826
+            if base == 0:
+                return pd.Series(0.0, index=s.index)
+            return ((s - s.median()) / base).abs()
+
+        # level lokasi: MAD per FLOCCD (deviasi disc antar baris item satuan)
+        loc_med = nb.groupby("FLOCCD")["DISCOUNT"].median().rename("MEDIAN_DISC_LOKASI")
+        loc_mad = (
+            nb.assign(_d=lambda x: (x["DISCOUNT"] - x["FLOCCD"].map(loc_med)).abs())
+              .groupby("FLOCCD")["_d"].median().rename("MAD_LOKASI")
+        )
+
+        grp = nb.groupby(["FLOCCD", "KASIR"])
+        out = grp.agg(
+            MEDIAN_DISC_KASIR=("DISCOUNT", "median"),
+            BARIS_ITEM=("NOTRAN", "size"),
+            JUMLAH_TX=("NOTRAN", "nunique"),
+            TOTAL_REVENUE=("LINE_REVENUE", "sum"),
+        ).reset_index()
+        # MAD per kasir (median absolute deviation) dihitung manual
+        # karena SeriesGroupBy.mad sudah dihapus di pandas >= 2.x
+        tmp = nb.merge(
+            out[["FLOCCD", "KASIR", "MEDIAN_DISC_KASIR"]],
+            on=["FLOCCD", "KASIR"], how="left",
+        )
+        tmp["_dev"] = (tmp["DISCOUNT"] - tmp["MEDIAN_DISC_KASIR"]).abs()
+        mad_kasir = tmp.groupby(["FLOCCD", "KASIR"])["_dev"].median().rename("MAD_KASIR")
+        out = out.merge(mad_kasir.reset_index(), on=["FLOCCD", "KASIR"], how="left")
+        out = out.merge(loc_med, on="FLOCCD", how="left").merge(loc_mad, on="FLOCCD", how="left")
+
+        # hitung z per baris lalu agregasi: pakai median z-score per kasir
+        nb = nb.merge(loc_med, on="FLOCCD", how="left").merge(loc_mad, on="FLOCCD", how="left")
+        base = nb["MAD_LOKASI"] * 1.4826
+        nb = nb[base > 0]
+        if len(nb) > 0:
+            nb["_z"] = ((nb["DISCOUNT"] - nb["MEDIAN_DISC_LOKASI"]) / (nb["MAD_LOKASI"] * 1.4826)).abs()
+            zagg = nb.groupby(["FLOCCD", "KASIR"])["_z"].median().rename("Z_SCORE")
+            out = out.merge(zagg, on=["FLOCCD", "KASIR"], how="left")
+        else:
+            out["Z_SCORE"] = 0.0
+        out["Z_SCORE"] = out["Z_SCORE"].fillna(0.0).round(2)
+
+        def _status(r):
+            if r["JUMLAH_TX"] < min_tx:
+                return "MINIM_DATA"
+            if r["Z_SCORE"] >= z_thresh:
+                return "ANOMALI"
+            return "NORMAL"
+        out["STATUS"] = out.apply(_status, axis=1)
+        out["MEDIAN_DISC_KASIR"] = out["MEDIAN_DISC_KASIR"].round(2)
+        out["MAD_KASIR"] = out["MAD_KASIR"].round(2)
+        if nama_col:
+            lok = df.groupby("FLOCCD")[nama_col].first().rename("NAMA_LOKASI")
+            out = out.merge(lok, on="FLOCCD", how="left")
+        return out.sort_values("Z_SCORE", ascending=False).reset_index(drop=True)
+
+    # ===== KPI DASHBOARD HARIAN =====
+    def kpi_dashboard(self, floocd=None) -> dict:
+        """Snapshot KPI harian: hari terakhir data vs kemarin vs rata-rata 7/30 hari.
+
+        Return dict:
+        {
+          "latest_date": Timestamp,
+          "today"/"yesterday": {"revenue","tx","qty","avg_disc_single"},
+          "avg_7d"/"avg_30d": {"revenue_per_hari","tx_per_hari"},
+          "growth": {...pct...},
+          "top_items_today": DataFrame (top 10 by qty hari terakhir),
+          "alerts": {"dead_stock_count","dead_stock_value","dead_stock_top","low_stock"}
+        }
+        """
+        if self.df is None:
+            raise ValueError("Data belum dimuat")
+        df = self.df.copy()
+        if floocd and str(floocd).strip():
+            df = df[df["FLOCCD"].astype(str) == str(floocd).strip()]
+        if df.empty:
+            return {}
+        df["_date"] = df["FDATE"].dt.normalize()
+        latest = df["_date"].max()
+
+        def metrics(sub: pd.DataFrame) -> dict:
+            if sub.empty:
+                return {"revenue": 0.0, "tx": 0, "qty": 0, "avg_disc_single": 0.0}
+            nb = sub[~sub["IS_BUNDLE"]] if "IS_BUNDLE" in sub.columns else sub
+            return {
+                "revenue": float(sub["LINE_REVENUE"].sum()),
+                "tx": int(sub["NOTRAN"].nunique()),
+                "qty": int(sub["QTY"].sum()),
+                "avg_disc_single": round(float(nb["DISCOUNT"].mean()), 2) if len(nb) else 0.0,
+            }
+
+        today_df = df[df["_date"] == latest]
+        yest_df = df[df["_date"] == latest - pd.Timedelta(days=1)]
+        d7 = df[(df["_date"] < latest) & (df["_date"] >= latest - pd.Timedelta(days=7))]
+        d30 = df[(df["_date"] < latest) & (df["_date"] >= latest - pd.Timedelta(days=30))]
+
+        def per_day(sub: pd.DataFrame) -> dict:
+            n_days = max(sub["_date"].nunique(), 1)
+            m = metrics(sub)
+            return {
+                "revenue_per_hari": round(m["revenue"] / n_days, 0),
+                "tx_per_hari": round(m["tx"] / n_days, 1),
+                "n_hari": int(sub["_date"].nunique()),
+            }
+
+        today = metrics(today_df)
+        yesterday = metrics(yest_df)
+        a7 = per_day(d7)
+        a30 = per_day(d30)
+
+        def g(cur, ref) -> float | None:
+            if ref == 0:
+                return None
+            return round((cur - ref) / ref * 100, 1)
+
+        growth = {
+            "revenue_vs_kemarin": g(today["revenue"], yesterday["revenue"]),
+            "revenue_vs_avg7d": g(today["revenue"], a7["revenue_per_hari"]),
+            "revenue_vs_avg30d": g(today["revenue"], a30["revenue_per_hari"]),
+            "tx_vs_kemarin": g(today["tx"], yesterday["tx"]),
+        }
+
+        # top items hari terakhir (by qty, gabung bundle + satuan)
+        top_today = (
+            today_df.groupby(["PLU", "NAMA_BRG"])
+            .agg(TOTAL_QTY=("QTY", "sum"), TOTAL_REVENUE=("LINE_REVENUE", "sum"),
+                 JUMLAH_TX=("NOTRAN", "nunique"))
+            .reset_index()
+            .sort_values("TOTAL_QTY", ascending=False)
+            .head(10)
+            .reset_index(drop=True)
+        )
+
+        # alerts: dead stock & stok kritis (perlu classify dijalankan)
+        alerts: dict = {}
+        try:
+            ds = self.dead_stock_items(days=60, floocd=floocd)
+            if not ds.empty:
+                alerts["dead_stock_count"] = int(len(ds))
+                alerts["dead_stock_value"] = float(ds["LIFETIME_REVENUE"].sum())
+                alerts["dead_stock_top"] = (
+                    ds.sort_values("LIFETIME_REVENUE", ascending=False).head(10)
+                      .reset_index(drop=True)
+                )
+            else:
+                alerts["dead_stock_count"] = 0
+        except Exception:
+            alerts["dead_stock_count"] = 0
+
+        if self.df_stock is not None:
+            try:
+                st_df = self.df_stock.copy()
+                need = {"PLU", "SISA_STOK"}
+                if {"FLOCCD"} & set(st_df.columns) and floocd and str(floocd).strip():
+                    st_df = st_df[st_df["FLOCCD"].astype(str) == str(floocd).strip()]
+                if need.issubset(st_df.columns):
+                    low = st_df[pd.to_numeric(st_df["SISA_STOK"], errors="coerce") <= 2]
+                    alerts["low_stock_count"] = int(len(low))
+                    if not low.empty and "NAMA_BRG" not in low.columns:
+                        nm = self.df.drop_duplicates("PLU").set_index("PLU")["NAMA_BRG"]
+                        low = low.copy()
+                        low["NAMA_BRG"] = low["PLU"].map(nm)
+                    alerts["low_stock_top"] = low.head(10).reset_index(drop=True)
+            except Exception:
+                pass
+
+        return {
+            "latest_date": latest,
+            "today": today,
+            "yesterday": yesterday,
+            "avg_7d": a7,
+            "avg_30d": a30,
+            "growth": growth,
+            "top_items_today": top_today,
+            "alerts": alerts,
+        }
+
+    # ===== EFEKTIVITAS PROMO (Price Elasticity sederhana) =====
+    def promo_effectiveness(self, disc_threshold: float = 20.0, floocd=None,
+                            start=None, end=None, min_rows: int = 3) -> pd.DataFrame:
+        """Bandingkan performa item saat promo (diskon >= threshold) vs normal.
+
+        Untuk setiap item satuan (non-bundle), kelompokkan baris transaksi menjadi:
+        - PROMO  : DISCOUNT >= disc_threshold
+        - NORMAL : DISCOUNT <  disc_threshold
+        Lalu hitung QTY, revenue, dan rata-rata per-baris di masing-masing kelompok.
+
+        Kolom penting:
+        - QTY_LIFT_PCT: kenaikan qty rata-rata per hari saat promo vs normal
+                       (positif = promo mendorong volume, negatif = promo sia-sia)
+        - REV_LIFT_PCT: kenaikan revenue rata-rata per hari saat promo vs normal
+        - VERDICT: 🟢 Efektif | 🟡 Netral | 🔴 Tidak Efektif
+        """
+        df = self.filter_df(start, end, floocd)
+        if df.empty or "IS_BUNDLE" not in df.columns:
+            return pd.DataFrame()
+        nb = df[~df["IS_BUNDLE"]].copy()
+        if nb.empty:
+            return pd.DataFrame()
+        nb["_group"] = np.where(nb["DISCOUNT"] >= disc_threshold, "PROMO", "NORMAL")
+        nb["_date"] = nb["FDATE"].dt.normalize()
+
+        def agg_group(sub: pd.DataFrame) -> dict | None:
+            if sub.empty:
+                return None
+            n_days = max(sub["_date"].nunique(), 1)
+            return {
+                "rows": int(len(sub)),
+                "qty": int(sub["QTY"].sum()),
+                "revenue": float(sub["LINE_REVENUE"].sum()),
+                "qty_per_day": sub["QTY"].sum() / n_days,
+                "rev_per_day": sub["LINE_REVENUE"].sum() / n_days,
+                "avg_price": float((sub["JUMLAH"].sum() / sub["QTY"].sum())) if sub["QTY"].sum() else 0.0,
+            }
+
+        rows = []
+        for (plu, nama), grp in nb.groupby(["PLU", "NAMA_BRG"]):
+            promo = agg_group(grp[grp["_group"] == "PROMO"])
+            normal = agg_group(grp[grp["_group"] == "NORMAL"])
+            total_rows = len(grp)
+            if total_rows < min_rows:
+                continue
+
+            qty_lift = rev_lift = None
+            if promo and normal and normal["qty_per_day"] and normal["rev_per_day"]:
+                qty_lift = round((promo["qty_per_day"] - normal["qty_per_day"]) / normal["qty_per_day"] * 100, 1)
+                rev_lift = round((promo["rev_per_day"] - normal["rev_per_day"]) / normal["rev_per_day"] * 100, 1)
+
+            def verdict():
+                if promo is None or normal is None:
+                    return "➖ Satu Sisi"
+                if qty_lift is None:
+                    return "➖"
+                if qty_lift >= 10:
+                    return "🟢 Efektif"
+                if qty_lift <= -10:
+                    return "🔴 Tidak Efektif"
+                return "🟡 Netral"
+
+            rows.append({
+                "PLU": plu,
+                "NAMA_BRG": nama,
+                "TOTAL_QTY": int(grp["QTY"].sum()),
+                "TOTAL_REVENUE": round(float(grp["LINE_REVENUE"].sum()), 0),
+                "AVG_DISC_PCT": round(float(grp["DISCOUNT"].mean()), 2),
+                "PROMO_ROWS": promo["rows"] if promo else 0,
+                "NORMAL_ROWS": normal["rows"] if normal else 0,
+                "PROMO_QTY": promo["qty"] if promo else 0,
+                "NORMAL_QTY": normal["qty"] if normal else 0,
+                "PROMO_REVENUE": round(promo["revenue"], 0) if promo else 0,
+                "NORMAL_REVENUE": round(normal["revenue"], 0) if normal else 0,
+                "PROMO_QTY_PER_DAY": round(promo["qty_per_day"], 2) if promo else 0,
+                "NORMAL_QTY_PER_DAY": round(normal["qty_per_day"], 2) if normal else 0,
+                "QTY_LIFT_PCT": qty_lift,
+                "REV_LIFT_PCT": rev_lift,
+                "VERDICT": verdict(),
+            })
+
+        out = pd.DataFrame(rows)
+        if out.empty:
+            return out
+        return out.sort_values("TOTAL_QTY", ascending=False).reset_index(drop=True)
+
     def export(self, output_path: str, top_n: int = 20) -> str:
         with pd.ExcelWriter(output_path, engine="openpyxl") as w:
             self._write_readme(w)
