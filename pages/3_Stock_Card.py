@@ -21,50 +21,24 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import bcrypt
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from stock_card import StockCard
 
+# Auth terpusat (auth.py)
+from auth import login_gate
+
 # ============================================================================
-# AUTH (duplikasi)
+# PAGE CONFIG + AUTH
 # ============================================================================
-DEFAULT_USERS_SC = {
-    "admin": "$2b$12$38P/ATKNv3p/d2kKebfxouS8TPeFZgSs9837E2oUSsewRe5uA7klq",
-    "tonizz": "$2b$12$FKS3raeR9UZtbeNsqwvfAe5hKc6oC6LhP2Rkok6LZCjsj2BZFHVw.",
-}
-
-def _get_users_sc() -> dict:
-    try:
-        if "users" in st.secrets:
-            return dict(st.secrets["users"])
-    except Exception:
-        pass
-    return DEFAULT_USERS_SC
-
-def _login_gate_sc():
-    if st.session_state.get("logged_in"):
-        return
-    st.title("🔐 Login")
-    users = _get_users_sc()
-    user = st.text_input("Username")
-    pwd = st.text_input("Password", type="password")
-    if st.button("Login"):
-        if user in users and bcrypt.checkpw(pwd.encode(), users[user].encode()):
-            st.session_state["logged_in"] = True
-            st.rerun()
-        else:
-            st.error("Username / password salah")
-    st.stop()
-
-_login_gate_sc()
+st.set_page_config(page_title="Stock Card", layout="wide")
+login_gate(subtitle="Stock Card", form_key="login_sc")
 
 # ============================================================================
 # JUDUL
 # ============================================================================
-st.set_page_config(page_title="Stock Card", layout="wide")
 st.title("📦 Kartu Stok Bulanan")
 st.markdown("Analisa stok per PLU per lokasi per bulan dari **Stok Awal + DBU + DBKS**")
 

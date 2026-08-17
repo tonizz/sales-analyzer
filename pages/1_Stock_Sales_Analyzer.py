@@ -34,83 +34,17 @@ from pathlib import Path
 # (file ini di subfolder pages/, parent = D:\scr)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import bcrypt
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from stock_sales_analyzer import StockSalesAnalyzer
 
-# ============================================================================
-# AUTH (duplikasi minimal dari bundle_analyzer_web.py untuk isolasi)
-# ============================================================================
-DEFAULT_USERS_SSA = {
-    "admin": "$2b$12$38P/ATKNv3p/d2kKebfxouS8TPeFZgSs9837E2oUSsewRe5uA7klq",
-    "tonizz": "$2b$12$FKS3raeR9UZtbeNsqwvfAe5hKc6oC6LhP2Rkok6LZCjsj2BZFHVw.",
-}
-DEFAULT_PASSWORD_HINT_SSA = {
-    "admin": "admin123",
-    "tonizz": "tonizz2026",
-}
-
-
-def _get_users_ssa() -> dict:
-    try:
-        if "users" in st.secrets:
-            return dict(st.secrets["users"])
-    except Exception:
-        pass
-    return DEFAULT_USERS_SSA
-
-
-def _login_gate_ssa():
-    """Login gate terisolasi. Stop eksekusi kalau belum login.
-    Catatan: st.session_state di-share dengan halaman utama, jadi kalau
-    user sudah login di halaman utama, otomatis authenticated di sini juga.
-    """
-    if st.session_state.get("logged_in"):
-        return
-    st.markdown(
-        """
-<div style="max-width: 420px; margin: 4rem auto; padding: 2.5rem;
-            background: white; border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
-    <h2 style="text-align: center; color: #1f77b4; margin: 0 0 0.5rem 0;">🔐 Login</h2>
-    <p style="text-align: center; color: #666; margin: 0 0 1.5rem 0;">
-        Stock & Sales Analyzer — Akses Terbatas
-    </p>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-    users = _get_users_ssa()
-    with st.form("login_form_ssa", clear_on_submit=True):
-        u = st.text_input("Username", placeholder="admin / tonizz", key="ssa_user")
-        p = st.text_input("Password", type="password", key="ssa_pw")
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            submit = st.form_submit_button("Masuk", use_container_width=True, type="primary")
-        if submit:
-            stored = users.get(u)
-            if stored and bcrypt.checkpw(p.encode(), stored.encode()):
-                st.session_state.logged_in = True
-                st.session_state.user = u
-                st.rerun()
-            else:
-                st.error("❌ Username atau password salah.")
-    with st.expander("ℹ️ Info login default (dev only)"):
-        for user, pw in DEFAULT_PASSWORD_HINT_SSA.items():
-            st.caption(f"• **{user}** / `{pw}`")
-        st.caption(
-            "Untuk production, set di Streamlit Cloud secrets. "
-            "Login di halaman utama sudah share session — buka "
-            "[Sales Analyzer](/) dulu, baru kembali ke sini."
-        )
-    st.stop()
-
+# Auth terpusat (auth.py): login sekali untuk semua halaman
+from auth import login_gate, render_logout
 
 # ============================================================================
-# PAGE CONFIG
+# PAGE CONFIG + AUTH
 # ============================================================================
 st.set_page_config(
     page_title="Stock & Sales Analyzer",
@@ -119,19 +53,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Auth check
-_login_gate_ssa()
+login_gate(subtitle="Stock & Sales Analyzer", form_key="login_ssa")
 
 # Sidebar: info user + link kembali + logout
 with st.sidebar:
     st.markdown("---")
-    st.caption(f"👤 Login sebagai: **{st.session_state.get('user', '?')}**")
-    st.caption("📊 **Stock & Sales Analyzer**")
-    st.caption("Halaman terpisah dari Sales Analyzer utama.")
-    if st.button("🚪 Logout", use_container_width=True, key="logout_ssa"):
-        st.session_state.logged_in = False
-        st.session_state.user = None
-        st.rerun()
+    render_logout(key="logout_ssa")
     st.markdown("---")
 
 # ============================================================================

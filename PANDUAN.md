@@ -578,7 +578,7 @@ Orang lain di jaringan yang sama bisa akses via `http://[IP-kamu]:8501`
 
 ### 12.5 Catatan penting
 - File Excel TIDAK di-upload ke server/cloud (kalau deploy self-hosted) — tetap di komputer user
-- Untuk keamanan produksi, tambahkan **autentikasi** (Streamlit punya `st.experimental_user` atau pakai reverse proxy)
+- Autentikasi sudah terpusat di **`auth.py`** (bcrypt + Streamlit Secrets). Produksi WAJIB isi `[users]` di Secrets
 - Untuk data besar (>100k baris), Plotly mungkin lambat — gunakan `use_container_width=True` dan pagination
 
 ---
@@ -1160,8 +1160,9 @@ Scan barcode pakai kamera HP langsung di browser — tanpa install aplikasi.
 
 ```
 D:\scr\
-├── bundle_analyzer.py              ← Main analyzer class (28 method) — TIDAK disentuh
-├── bundle_analyzer_web.py          ← Streamlit web app (11 tab utama) — TIDAK disentuh
+├── bundle_analyzer.py              ← Main analyzer class (28 method)
+├── bundle_analyzer_web.py          ← Streamlit web app (12 tab utama)
+├── auth.py                         ← Modul login terpusat (bcrypt + secrets) — dipakai semua halaman
 ├── stock_sales_analyzer.py         ← Stand-alone stock & sales analyzer (BARU, 32 KB)
 ├── bundle_analyzer_multi.py        ← Multi-year analyzer (N tahun) (BARU, 550+ baris)
 ├── stock_card.py                   ← Stock card analyzer (BARU)
@@ -1192,11 +1193,16 @@ D:\scr\
 │   ├── 2_YoY_Forecast.py           ← Streamlit page: Multi-Year 9 tab (BARU)
 │   ├── 3_Stock_Card.py             ← Streamlit page: Stock Card (BARU)
 │   └── 4_Stock_Opname.py           ← Streamlit page: Stock Opname HO (BARU)
+├── tests/                          ← Unit tests (pytest): deteksi bundle + rumus stock card
+├── .github/workflows/ci.yml        ← CI otomatis (test tiap push)
 ├── PANDUAN.md                      ← Dokumentasi ini
-├── requirements.txt                ← Dependencies
+├── requirements.txt                ← Dependencies (pinned range)
 ├── .gitignore
 └── run_web.bat                     ← Shortcut Streamlit
 ```
+
+> 📥 `dist/BundleAnalyzer.exe` TIDAK lagi di-track git (repo terlalu besar).
+> Rebuild lokal: `build.bat`. Distribusi: upload ke **GitHub Releases**.
 
 ### Deployed URLs
 - **GitHub:** `https://github.com/tonizz/sales-analyzer`
@@ -1204,9 +1210,9 @@ D:\scr\
 - **Streamlit di lokal:** `http://localhost:8501`
 
 ### Catatan penting
-- `bundle_analyzer.py` dan `bundle_analyzer_web.py` TIDAK BOLEH disentuh (0 diff)
+- Repo **PRIVATE** — jangan ubah ke public selama file data `*.xlsx` masih di-track
+- Autentikasi terpusat di `auth.py`; halaman baru cukup `from auth import login_gate`
 - Semua kode baru di file terpisah (multi-page via `pages/`)
-- Setiap halaman baru punya auth duplikasi minimal (~20 baris)
 - Untuk problem session cache di Streamlit Cloud: **push saja tidak cukup**, harus **reboot app** (⋮ → Reboot) di https://share.streamlit.io/
 - `scikit-learn` ditambahkan ke requirements.txt untuk ML
 

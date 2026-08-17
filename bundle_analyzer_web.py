@@ -1,4 +1,4 @@
-"""
+﻿"""
 Bundle Sales Analyzer - Web Edition (Streamlit)
 ================================================
 Aplikasi web interaktif untuk menganalisa penjualan paket/bundle.
@@ -14,7 +14,6 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
-import bcrypt
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -28,7 +27,7 @@ from bundle_analyzer import BundleAnalyzer
 # ============= PAGE CONFIG =============
 st.set_page_config(
     page_title="Sales Analyzer",
-    page_icon="📊",
+    page_icon="ðŸ“Š",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -97,76 +96,11 @@ PRESET_PERIODS = [
 ]
 
 # ============= AUTH =============
-# Default fallback credentials (digunakan kalau st.secrets tidak ada).
-# Untuk production, SET secrets di Streamlit Cloud dashboard!
-# Format di secrets.toml:
-#   [users]
-#   admin = "$2b$12$..."
-#   tonizz = "$2b$12$..."
-DEFAULT_USERS = {
-    "admin": "$2b$12$38P/ATKNv3p/d2kKebfxouS8TPeFZgSs9837E2oUSsewRe5uA7klq",
-    "tonizz": "$2b$12$FKS3raeR9UZtbeNsqwvfAe5hKc6oC6LhP2Rkok6LZCjsj2BZFHVw.",
-}
-DEFAULT_PASSWORD_HINT = {
-    "admin": "admin123",
-    "tonizz": "tonizz2026",
-}
+# Autentikasi terpusat di auth.py (login sekali untuk semua halaman,
+# tanpa hint password di UI; production pakai Streamlit Cloud Secrets).
+from auth import login_gate, render_logout
 
-
-def _get_users() -> dict:
-    """Ambil user dict dari st.secrets (prioritas) atau fallback default."""
-    try:
-        if "users" in st.secrets:
-            return dict(st.secrets["users"])
-    except Exception:
-        pass
-    return DEFAULT_USERS
-
-
-def _login_gate():
-    """Tampilkan login form. Stop eksekusi kalau belum login."""
-    if st.session_state.get("logged_in"):
-        return True
-    users = _get_users()
-    st.markdown(
-        """
-<div style="max-width: 420px; margin: 4rem auto; padding: 2.5rem;
-            background: white; border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
-    <h2 style="text-align: center; color: #1f77b4; margin: 0 0 0.5rem 0;">🔐 Login</h2>
-    <p style="text-align: center; color: #666; margin: 0 0 1.5rem 0;">
-        Sales Analyzer — Akses Terbatas
-    </p>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-    with st.form("login_form", clear_on_submit=True):
-        u = st.text_input("Username", placeholder="admin / tonizz")
-        p = st.text_input("Password", type="password")
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            submit = st.form_submit_button("Masuk", use_container_width=True, type="primary")
-        if submit:
-            stored = users.get(u)
-            if stored and bcrypt.checkpw(p.encode(), stored.encode()):
-                st.session_state.logged_in = True
-                st.session_state.user = u
-                st.rerun()
-            else:
-                st.error("❌ Username atau password salah.")
-    with st.expander("ℹ️ Info login default (dev only)"):
-        for user, pw in DEFAULT_PASSWORD_HINT.items():
-            st.caption(f"• **{user}** / `{pw}`")
-        st.caption(
-            "Untuk production, ganti dengan secrets Streamlit Cloud "
-            "(Settings → Secrets)."
-        )
-    st.stop()
-    return False
-
-
-_login_gate()
+login_gate(subtitle="Sales Analyzer", form_key="login_main")
 
 
 # ============= FETCH FROM URL =============
@@ -331,7 +265,7 @@ def to_excel_bytes(sheets: dict) -> bytes:
             ["Bundle Revenue", "Total Revenue dari transaksi yang terdeteksi sebagai bundle"],
             ["Bundle %", "Persentase bundle dari total transaksi"],
             ["LINE_REVENUE", "Pendapatan per baris (sama dengan JUMLAH, sudah nett)"],
-            ["JUMLAH", "Total nett per baris (sudah × QTY + diskon)"],
+            ["JUMLAH", "Total nett per baris (sudah Ã— QTY + diskon)"],
         ]
         pd.DataFrame(readme_rows, columns=["Istilah", "Artinya"]).to_excel(
             writer, sheet_name="BACA_DULU", index=False
@@ -343,21 +277,21 @@ def to_excel_bytes(sheets: dict) -> bytes:
 
 # ============= SIDEBAR =============
 with st.sidebar:
-    st.markdown("## 📊 Sales Analyzer")
-    st.caption("Web Edition · v2.0")
+    st.markdown("## ðŸ“Š Sales Analyzer")
+    st.caption("Web Edition Â· v2.0")
     st.markdown("---")
-    uploaded = st.file_uploader("📁 **Upload File Excel**", type=["xlsx", "xls"])
+    uploaded = st.file_uploader("ðŸ“ **Upload File Excel**", type=["xlsx", "xls"])
 
-    with st.expander("🔧 Filter & Pengaturan", expanded=True):
+    with st.expander("ðŸ”§ Filter & Pengaturan", expanded=True):
         min_items = st.number_input("Min item per bundle", 2, 20, 2)
         min_disc = st.number_input("Min discount %", 0.0, 100.0, 0.0, 0.5)
         DISC_TOL_DEFAULT = 1.0
-        if st.button("↺ Reset slider", key="reset_disc_tol", help="Kembalikan ke 1.0"):
+        if st.button("â†º Reset slider", key="reset_disc_tol", help="Kembalikan ke 1.0"):
             st.session_state["disc_tol_key"] = DISC_TOL_DEFAULT
             st.rerun()
         disc_tol = st.slider("Toleransi selisih DISCOUNT %", 0.1, 5.0, DISC_TOL_DEFAULT, 0.1,
                              key="disc_tol_key",
-                             help="Beda diskon antar item dalam 1 NOTRAN ≤ nilai ini masih dianggap bundle")
+                             help="Beda diskon antar item dalam 1 NOTRAN â‰¤ nilai ini masih dianggap bundle")
         loc_filter = st.text_input("FLOCCD filter (pisah koma)", placeholder="mis. 55592, 55733")
         date_preset = st.selectbox("Periode", PRESET_PERIODS)
         d_from, d_to = None, None
@@ -365,10 +299,10 @@ with st.sidebar:
             d_from = st.date_input("Dari tanggal", value=None)
             d_to = st.date_input("Sampai tanggal", value=None)
 
-    with st.expander("📡 Auto-fetch dari Google Drive", expanded=False):
+    with st.expander("ðŸ“¡ Auto-fetch dari Google Drive", expanded=False):
         st.caption(
-            "Setup 1x: upload file ke Google Drive → Share → 'Anyone with the link' "
-            "→ paste link di bawah. App akan auto-fetch data terbaru."
+            "Setup 1x: upload file ke Google Drive â†’ Share â†’ 'Anyone with the link' "
+            "â†’ paste link di bawah. App akan auto-fetch data terbaru."
         )
         default_url = get_data_url() or st.session_state.get("data_url", "")
         data_url = st.text_input(
@@ -379,54 +313,50 @@ with st.sidebar:
         )
         col_a, col_b = st.columns(2)
         with col_a:
-            if st.button("🔄 Refresh dari URL", use_container_width=True, key="fetch_url"):
+            if st.button("ðŸ”„ Refresh dari URL", use_container_width=True, key="fetch_url"):
                 if not data_url or not data_url.strip():
-                    st.warning("⚠️ Isi URL terlebih dahulu.")
+                    st.warning("âš ï¸ Isi URL terlebih dahulu.")
                 else:
                     try:
-                        with st.spinner("⏳ Download data dari Google Drive..."):
+                        with st.spinner("â³ Download data dari Google Drive..."):
                             data_bytes = fetch_from_url(data_url)
                         st.session_state["data_url"] = data_url.strip()
-                        with st.spinner("⏳ Memuat & menganalisa data..."):
+                        with st.spinner("â³ Memuat & menganalisa data..."):
                             process_file(
                                 io.BytesIO(data_bytes), min_items, min_disc,
                                 loc_filter, date_preset, d_from, d_to, disc_tol,
                             )
-                        st.success(f"✓ Data ter-fetch! ({len(data_bytes):,} bytes)")
+                        st.success(f"âœ“ Data ter-fetch! ({len(data_bytes):,} bytes)")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"❌ Gagal fetch: {e}")
+                        st.error(f"âŒ Gagal fetch: {e}")
         with col_b:
-            if default_url and st.button("ℹ️ Lihat info", use_container_width=True, key="fetch_info"):
+            if default_url and st.button("â„¹ï¸ Lihat info", use_container_width=True, key="fetch_info"):
                 st.info(f"URL default dari secrets: `{default_url[:60]}...`")
 
     if uploaded is not None:
-        if st.button("🚀 Proses Data", type="primary", use_container_width=True):
+        if st.button("ðŸš€ Proses Data", type="primary", use_container_width=True):
             try:
-                with st.spinner("⏳ Memuat & menganalisa data..."):
+                with st.spinner("â³ Memuat & menganalisa data..."):
                     process_file(uploaded, min_items, min_disc, loc_filter, date_preset, d_from, d_to, disc_tol)
-                st.success("✓ Data berhasil dimuat!")
+                st.success("âœ“ Data berhasil dimuat!")
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ Gagal: {e}")
+                st.error(f"âŒ Gagal: {e}")
 
     if st.session_state.data_loaded:
         st.markdown("---")
-        if st.button("🗑️ Reset / Upload Ulang", use_container_width=True):
+        if st.button("ðŸ—‘ï¸ Reset / Upload Ulang", use_container_width=True):
             st.session_state.data_loaded = False
             st.session_state.analyzer = None
             st.session_state.file_name = ""
             st.rerun()
 
     st.markdown("---")
-    st.caption(f"👤 Login sebagai: **{st.session_state.get('user', '?')}**")
-    if st.button("🚪 Logout", use_container_width=True):
-        st.session_state.logged_in = False
-        st.session_state.user = None
-        st.rerun()
+    render_logout(key="logout_main")
 
     st.markdown("---")
-    st.caption("💡 Tips: klik kolom tabel untuk sort, atau download Excel untuk laporan.")
+    st.caption("ðŸ’¡ Tips: klik kolom tabel untuk sort, atau download Excel untuk laporan.")
 
 
 # ============= MAIN AREA =============
@@ -435,8 +365,8 @@ if not st.session_state.data_loaded:
     st.markdown(
         """
 <div class="welcome-hero">
-    <h1>📊 Sales Analyzer</h1>
-    <p>Analisa penjualan paket/bundle DAN item satuan dari data POS Anda — dengan visualisasi interaktif</p>
+    <h1>ðŸ“Š Sales Analyzer</h1>
+    <p>Analisa penjualan paket/bundle DAN item satuan dari data POS Anda â€” dengan visualisasi interaktif</p>
 </div>
 """,
         unsafe_allow_html=True,
@@ -444,24 +374,24 @@ if not st.session_state.data_loaded:
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown(
-            '<div class="feature-card">📈 <b>10 Tab Analisa Lengkap</b><br/>'
+            '<div class="feature-card">ðŸ“ˆ <b>10 Tab Analisa Lengkap</b><br/>'
             "Bundle, item satuan, summary, top produk, perbandingan, trend chart, dan lainnya.</div>",
             unsafe_allow_html=True,
         )
     with c2:
         st.markdown(
-            '<div class="feature-card">🎯 <b>Filter & Pencarian Mudah</b><br/>'
+            '<div class="feature-card">ðŸŽ¯ <b>Filter & Pencarian Mudah</b><br/>'
             "Preset tanggal, multi-lokasi, cari item tertentu dalam bundle.</div>",
             unsafe_allow_html=True,
         )
     with c3:
         st.markdown(
-            '<div class="feature-card">📥 <b>Export Excel 1-Klik</b><br/>'
+            '<div class="feature-card">ðŸ“¥ <b>Export Excel 1-Klik</b><br/>'
             "Semua hasil analisa bisa di-download dalam format Excel (.xlsx).</div>",
             unsafe_allow_html=True,
         )
     st.markdown("")
-    st.info("👈 **Upload file Excel di sidebar kiri untuk memulai.** Format yang didukung: `.xlsx` atau `.xls`")
+    st.info("ðŸ‘ˆ **Upload file Excel di sidebar kiri untuk memulai.** Format yang didukung: `.xlsx` atau `.xls`")
     st.stop()
 
 
@@ -472,13 +402,13 @@ b = df[df["IS_BUNDLE"]]
 nb = df[~df["IS_BUNDLE"]]
 
 # Header
-st.markdown("# 📊 Sales Analyzer")
+st.markdown("# ðŸ“Š Sales Analyzer")
 st.caption(
-    f"📄 `{st.session_state.file_name}` · "
-    f"{len(df):,} baris · {df['NOTRAN'].nunique():,} transaksi · "
-    f"{df['FLOCCD'].nunique()} lokasi · "
-    f"{int(b['IS_BUNDLE'].sum()):,} baris paket · "
-    f"{b['NOTRAN'].nunique():,} transaksi paket · "
+    f"ðŸ“„ `{st.session_state.file_name}` Â· "
+    f"{len(df):,} baris Â· {df['NOTRAN'].nunique():,} transaksi Â· "
+    f"{df['FLOCCD'].nunique()} lokasi Â· "
+    f"{int(b['IS_BUNDLE'].sum()):,} baris paket Â· "
+    f"{b['NOTRAN'].nunique():,} transaksi paket Â· "
     f"{int((~df['IS_BUNDLE']).sum()):,} baris satuan"
 )
 
@@ -491,15 +421,15 @@ bundle_pct = (n_b_tx / n_tx * 100) if n_tx > 0 else 0
 avg_disc_bundle = float(b["BUNDLE_DISC_PCT"].mean()) if len(b) > 0 else 0
 
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("💰 Total Revenue", _format_rp(total_rev))
-m2.metric("🛒 Total Transaksi", _format_int(n_tx))
+m1.metric("ðŸ’° Total Revenue", _format_rp(total_rev))
+m2.metric("ðŸ›’ Total Transaksi", _format_int(n_tx))
 m3.metric(
-    "📦 Bundle Transaksi",
+    "ðŸ“¦ Bundle Transaksi",
     _format_int(n_b_tx),
     delta=f"{bundle_pct:.1f}% bundle",
 )
 m4.metric(
-    "💎 Bundle Revenue",
+    "ðŸ’Ž Bundle Revenue",
     _format_rp(bundle_rev),
     delta=f"{bundle_rev / total_rev * 100:.1f}% dari total" if total_rev else "0%",
 )
@@ -509,24 +439,24 @@ st.markdown("")
 # ============= TABS =============
 tabs = st.tabs(
     [
-        "📊 Summary",
-        "📈 Distribusi",
-        "📋 Detail Bundle",
-        "🏆 Top Combo",
-        "🔍 Cari Paket",
-        "🏆 Top Produk Bundle",
-        "💰 Margin",
-        "📊 Perbandingan",
-        "📈 Trend",
-        "📋 Top & Satuan",
-        "📦 Strategi Penjualan",
-        "🧺 Basket",
+        "ðŸ“Š Summary",
+        "ðŸ“ˆ Distribusi",
+        "ðŸ“‹ Detail Bundle",
+        "ðŸ† Top Combo",
+        "ðŸ” Cari Paket",
+        "ðŸ† Top Produk Bundle",
+        "ðŸ’° Margin",
+        "ðŸ“Š Perbandingan",
+        "ðŸ“ˆ Trend",
+        "ðŸ“‹ Top & Satuan",
+        "ðŸ“¦ Strategi Penjualan",
+        "ðŸ§º Basket",
     ]
 )
 
 # ---------------- TAB 1: SUMMARY ----------------
 with tabs[0]:
-    st.markdown('<div class="section-header">📊 Ringkasan per Lokasi</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">ðŸ“Š Ringkasan per Lokasi</div>', unsafe_allow_html=True)
     sm = a.summary_by_location()
     if sm.empty:
         st.warning("Tidak ada data.")
@@ -554,7 +484,7 @@ with tabs[0]:
         st.dataframe(sm_disp, use_container_width=True, hide_index=True, height=400)
 
         # --- Monthly by Location ---
-        st.markdown('<div class="section-header">📅 Ringkasan per Lokasi per Bulan</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">ðŸ“… Ringkasan per Lokasi per Bulan</div>', unsafe_allow_html=True)
         msl = a.monthly_summary_by_location()
         if not msl.empty:
             st.dataframe(msl, use_container_width=True, hide_index=True)
@@ -566,7 +496,7 @@ with tabs[0]:
             st.plotly_chart(fig_msl, use_container_width=True)
 
         # --- Monthly bundle detail ---
-        with st.expander("📦 Detail Bundle per Lokasi per Bulan", expanded=False):
+        with st.expander("ðŸ“¦ Detail Bundle per Lokasi per Bulan", expanded=False):
             mbd = a.monthly_bundle_detail()
             if not mbd.empty:
                 lok_list = sorted(mbd["KODE LOKASI"].unique())
@@ -586,17 +516,17 @@ with tabs[0]:
                 sheets["Detail_Bundle"] = mbd
             excel_bytes = to_excel_bytes(sheets)
             st.download_button(
-                "📥 Download Summary (Excel)",
+                "ðŸ“¥ Download Summary (Excel)",
                 data=excel_bytes,
                 file_name="summary_lokasi.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
         except Exception as e:
-            st.caption(f"⚠️ Excel download tidak tersedia: {e}")
+            st.caption(f"âš ï¸ Excel download tidak tersedia: {e}")
 
 # ---------------- TAB 2: DISTRIBUSI DISKON ----------------
 with tabs[1]:
-    st.markdown('<div class="section-header">📈 Distribusi Discount Bundle</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">ðŸ“ˆ Distribusi Discount Bundle</div>', unsafe_allow_html=True)
     dd = a.discount_distribution()
     if dd.empty:
         st.warning("Tidak ada data bundle.")
@@ -616,7 +546,7 @@ with tabs[1]:
         st.dataframe(dd, use_container_width=True, hide_index=True, height=350)
         excel = to_excel_bytes({"Distribusi_Discount": dd})
         st.download_button(
-            "📥 Download (Excel)",
+            "ðŸ“¥ Download (Excel)",
             data=excel,
             file_name="distribusi_diskon.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -624,7 +554,7 @@ with tabs[1]:
 
 # ---------------- TAB 3: DETAIL BUNDLE ----------------
 with tabs[2]:
-    st.markdown('<div class="section-header">📋 Detail Bundle (1 baris = 1 item)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">ðŸ“‹ Detail Bundle (1 baris = 1 item)</div>', unsafe_allow_html=True)
     det = a.bundle_detail()
     if det.empty:
         st.warning("Tidak ada bundle terdeteksi.")
@@ -633,7 +563,7 @@ with tabs[2]:
         st.dataframe(det, use_container_width=True, hide_index=True, height=500)
         excel = to_excel_bytes({"Detail_Bundle": det})
         st.download_button(
-            "📥 Download (Excel)",
+            "ðŸ“¥ Download (Excel)",
             data=excel,
             file_name="detail_bundle.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -641,7 +571,7 @@ with tabs[2]:
 
 # ---------------- TAB 4: TOP KOMBINASI ----------------
 with tabs[3]:
-    st.markdown('<div class="section-header">🏆 Top Kombinasi Bundle</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">ðŸ† Top Kombinasi Bundle</div>', unsafe_allow_html=True)
     top_n = st.slider("Top N", 5, 50, 20, key="topcombo_n")
     tb = a.top_bundles(top_n)
     if tb.empty:
@@ -664,7 +594,7 @@ with tabs[3]:
         st.dataframe(tb, use_container_width=True, hide_index=True, height=400)
         excel = to_excel_bytes({"Top_Kombinasi": tb})
         st.download_button(
-            "📥 Download (Excel)",
+            "ðŸ“¥ Download (Excel)",
             data=excel,
             file_name="top_kombinasi.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -672,8 +602,8 @@ with tabs[3]:
 
 # ---------------- TAB 5: CARI ITEM ----------------
 with tabs[4]:
-    st.markdown('<div class="section-header">🔍 Cari Paket by Item</div>', unsafe_allow_html=True)
-    st.caption("Ketik kode/nama item → lihat semua bundle yang mengandung item tersebut.")
+    st.markdown('<div class="section-header">ðŸ” Cari Paket by Item</div>', unsafe_allow_html=True)
+    st.caption("Ketik kode/nama item â†’ lihat semua bundle yang mengandung item tersebut.")
     fc1, fc2, fc3, fc4 = st.columns([2, 1, 1, 1])
     with fc1:
         item_q = st.text_input("Kode / Nama Item", placeholder="mis. 64428, DURABEAM, PLAY")
@@ -684,7 +614,7 @@ with tabs[4]:
     with fc4:
         date_to = st.date_input("Sampai", value=None, key="srch_to")
 
-    if st.button("🔎 Cari Paket", type="primary") and item_q.strip():
+    if st.button("ðŸ”Ž Cari Paket", type="primary") and item_q.strip():
         try:
             floocd_clean = search_floocd.strip() if search_floocd else None
             summary, packages = a.search_bundles_by_item(
@@ -698,15 +628,15 @@ with tabs[4]:
             else:
                 # Ringkasan metrics
                 cm1, cm2, cm3, cm4 = st.columns(4)
-                cm1.metric("📦 Jumlah Paket", _format_int(summary["Jumlah Paket"]))
-                cm2.metric("💰 Total Nilai", _format_rp(summary["Total Nilai (Rp)"]))
-                cm3.metric("📊 Total QTY", _format_int(summary["Total QTY"]))
-                cm4.metric("🏷 Avg Diskon", _format_pct(summary["Rata-rata Diskon (%)"]))
+                cm1.metric("ðŸ“¦ Jumlah Paket", _format_int(summary["Jumlah Paket"]))
+                cm2.metric("ðŸ’° Total Nilai", _format_rp(summary["Total Nilai (Rp)"]))
+                cm3.metric("ðŸ“Š Total QTY", _format_int(summary["Total QTY"]))
+                cm4.metric("ðŸ· Avg Diskon", _format_pct(summary["Rata-rata Diskon (%)"]))
                 st.markdown("")
                 st.dataframe(packages, use_container_width=True, hide_index=True, height=400)
                 excel = to_excel_bytes({"Ringkasan": pd.DataFrame([summary]), "Detail_Paket": packages})
                 st.download_button(
-                    "📥 Download (Excel)",
+                    "ðŸ“¥ Download (Excel)",
                     data=excel,
                     file_name=f"bundle_search_{item_q.strip()}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -716,7 +646,7 @@ with tabs[4]:
 
 # ---------------- TAB 6: TOP PRODUK ----------------
 with tabs[5]:
-    st.markdown('<div class="section-header">🏆 Top Produk Bundle</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">ðŸ† Top Produk Bundle</div>', unsafe_allow_html=True)
     pn = st.slider("Top N", 5, 50, 20, key="topprod_n")
     tp = a.top_products_in_bundles(top_n=pn)
     if tp.empty:
@@ -739,9 +669,9 @@ with tabs[5]:
         st.dataframe(tp, use_container_width=True, hide_index=True, height=400)
 
         st.markdown("---")
-        st.markdown("##### 🔗 Cari Pasangan Item")
+        st.markdown("##### ðŸ”— Cari Pasangan Item")
         pair_q = st.text_input("Kode/Nama item", placeholder="mis. 64428", key="pair_q")
-        if st.button("🔎 Cari Pasangan") and pair_q.strip():
+        if st.button("ðŸ”Ž Cari Pasangan") and pair_q.strip():
             pairs = a.product_bundling_pairs(pair_q.strip(), top_n=pn)
             if pairs.empty:
                 st.info(f"Tidak ada pasangan untuk '{pair_q}'.")
@@ -749,7 +679,7 @@ with tabs[5]:
                 st.dataframe(pairs, use_container_width=True, hide_index=True, height=300)
                 excel = to_excel_bytes({"Top_Produk": tp, "Pasangan_Item": pairs})
                 st.download_button(
-                    "📥 Download (Excel)",
+                    "ðŸ“¥ Download (Excel)",
                     data=excel,
                     file_name="top_produk.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -757,7 +687,7 @@ with tabs[5]:
         else:
             excel = to_excel_bytes({"Top_Produk": tp})
             st.download_button(
-                "📥 Download (Excel)",
+                "ðŸ“¥ Download (Excel)",
                 data=excel,
                 file_name="top_produk.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -765,9 +695,9 @@ with tabs[5]:
 
 # ---------------- TAB 7: MARGIN ----------------
 with tabs[6]:
-    st.markdown('<div class="section-header">💰 Analisa Margin</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">ðŸ’° Analisa Margin</div>', unsafe_allow_html=True)
     st.warning(
-        "⚠️ Kolom `PRC_HIP` di data contoh adalah PLACEHOLDER (nilai 100). "
+        "âš ï¸ Kolom `PRC_HIP` di data contoh adalah PLACEHOLDER (nilai 100). "
         "Gunakan Master Cost atau Asumsi biaya di bawah untuk hasil yang akurat."
     )
     
@@ -781,7 +711,7 @@ with tabs[6]:
         try:
             df_c = pd.read_excel(cost_file)
             a.load_master_cost(df_c)
-            st.success(f"✅ Master Cost dimuat ({len(df_c):,} baris).")
+            st.success(f"âœ… Master Cost dimuat ({len(df_c):,} baris).")
         except Exception as e:
             st.error(f"Gagal memuat Master Cost: {e}")
 
@@ -789,7 +719,7 @@ with tabs[6]:
         "Asumsi biaya (% dari JUALAHIR). 0 = pakai PRC_HIP",
         min_value=0.0, max_value=100.0, value=30.0, step=1.0, key="mg_cost",
     )
-    if st.button("💰 Hitung Margin", type="primary"):
+    if st.button("ðŸ’° Hitung Margin", type="primary"):
         try:
             with st.spinner("Menghitung..."):
                 summary, per_loc, dq = a.margin_analysis(
@@ -797,19 +727,19 @@ with tabs[6]:
                 )
             if not summary or not dq.get("valid", True):
                 st.error(
-                    f"❌ Tidak bisa hitung margin: {dq.get('reason', 'data kosong')}. "
+                    f"âŒ Tidak bisa hitung margin: {dq.get('reason', 'data kosong')}. "
                     "Coba ubah filter atau upload ulang."
                 )
             else:
                 # KPI
                 cm1, cm2, cm3 = st.columns(3)
                 with cm1:
-                    st.markdown("##### 📦 Bundle")
+                    st.markdown("##### ðŸ“¦ Bundle")
                     st.metric("Revenue", _format_rp(summary["Bundle"]["Total Revenue (Rp)"]))
                     st.metric("Margin", _format_rp(summary["Bundle"]["Total Margin (Rp)"]))
                     st.metric("Margin %", _format_pct(summary["Bundle"]["Avg Margin %"]))
                 with cm2:
-                    st.markdown("##### 📋 Non-Bundle")
+                    st.markdown("##### ðŸ“‹ Non-Bundle")
                     st.metric("Revenue", _format_rp(summary["Non-Bundle"]["Total Revenue (Rp)"]))
                     st.metric("Margin", _format_rp(summary["Non-Bundle"]["Total Margin (Rp)"]))
                     st.metric("Margin %", _format_pct(summary["Non-Bundle"]["Avg Margin %"]))
@@ -818,7 +748,7 @@ with tabs[6]:
                     rev_nb = summary["Non-Bundle"]["Total Revenue (Rp)"]
                     mar_b = summary["Bundle"]["Total Margin (Rp)"]
                     mar_nb = summary["Non-Bundle"]["Total Margin (Rp)"]
-                    st.markdown("##### ⚖️ Perbandingan")
+                    st.markdown("##### âš–ï¸ Perbandingan")
                     st.metric("Bundle share Revenue", _format_pct(rev_b / (rev_b + rev_nb) * 100) if (rev_b + rev_nb) else "-")
                     st.metric("Bundle share Margin", _format_pct(mar_b / (mar_b + mar_nb) * 100) if (mar_b + mar_nb) else "-")
 
@@ -847,7 +777,7 @@ with tabs[6]:
                     "Per_Lokasi": per_loc,
                 })
                 st.download_button(
-                    "📥 Download (Excel)",
+                    "ðŸ“¥ Download (Excel)",
                     data=excel,
                     file_name="margin_analysis.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -857,7 +787,7 @@ with tabs[6]:
 
 # ---------------- TAB 8: PERBANDINGAN ----------------
 with tabs[7]:
-    st.markdown('<div class="section-header">📊 Perbandingan 2 Periode</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">ðŸ“Š Perbandingan 2 Periode</div>', unsafe_allow_html=True)
     ref_max = pd.to_datetime(a.df["FDATE"].max())
     cmp_presets_list = list(BundleAnalyzer.calc_comparison_presets(ref_max).keys())
     preset = st.selectbox("Preset Pembanding", cmp_presets_list, index=1, key="cmp_preset")
@@ -880,10 +810,10 @@ with tabs[7]:
         p2_from = st.date_input("Dari", value=p2_from, key="p2f")
         p2_to = st.date_input("Sampai", value=p2_to, key="p2t")
 
-    if st.button("📊 Bandingkan", type="primary"):
+    if st.button("ðŸ“Š Bandingkan", type="primary"):
         # Validasi tanggal
         if not all([p1_from, p1_to, p2_from, p2_to]):
-            st.error("❌ Semua tanggal wajib diisi. Pilih preset atau isi manual.")
+            st.error("âŒ Semua tanggal wajib diisi. Pilih preset atau isi manual.")
             st.stop()
         try:
             with st.spinner("Membandingkan..."):
@@ -928,7 +858,7 @@ with tabs[7]:
 
             excel = to_excel_bytes({"Ringkasan_VS": cmp_df, "Per_Lokasi_VS": loc_cmp})
             st.download_button(
-                "📥 Download (Excel)",
+                "ðŸ“¥ Download (Excel)",
                 data=excel,
                 file_name="perbandingan.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -938,7 +868,7 @@ with tabs[7]:
 
 # ---------------- TAB 9: TREND ----------------
 with tabs[8]:
-    st.markdown('<div class="section-header">📈 Trend & Chart</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">ðŸ“ˆ Trend & Chart</div>', unsafe_allow_html=True)
     t1, t2, t3 = st.columns(3)
     with t1:
         gran = st.radio("Granularitas", ["Harian", "Bulanan"], horizontal=True)
@@ -947,7 +877,7 @@ with tabs[8]:
     with t3:
         show_data = st.checkbox("Tampilkan tabel", value=True)
 
-    if st.button("📈 Generate Chart", type="primary"):
+    if st.button("ðŸ“ˆ Generate Chart", type="primary"):
         try:
             with st.spinner("Membuat chart..."):
                 if gran == "Harian":
@@ -991,7 +921,7 @@ with tabs[8]:
             # Download button selalu tersedia (di luar if show_data)
             excel = to_excel_bytes({"Trend": trend})
             st.download_button(
-                "📥 Download (Excel)",
+                "ðŸ“¥ Download (Excel)",
                 data=excel,
                 file_name="trend.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1003,7 +933,7 @@ with tabs[8]:
 # ---------------- TAB 10: ITEM SATUAN ----------------
 with tabs[9]:
     st.markdown(
-        '<div class="section-header">📋 Analisa Item Satuan (Non-Bundle)</div>',
+        '<div class="section-header">ðŸ“‹ Analisa Item Satuan (Non-Bundle)</div>',
         unsafe_allow_html=True,
     )
     st.caption(
@@ -1011,12 +941,12 @@ with tabs[9]:
     )
 
     sub = st.tabs([
-        "📊 Ringkasan",
-        "📋 Detail",
-        "🏆 Top Item Satuan",
-        "🏆 Top Keseluruhan",
-        "📈 Dist. Diskon",
-        "🔍 Cari Item",
+        "ðŸ“Š Ringkasan",
+        "ðŸ“‹ Detail",
+        "ðŸ† Top Item Satuan",
+        "ðŸ† Top Keseluruhan",
+        "ðŸ“ˆ Dist. Diskon",
+        "ðŸ” Cari Item",
     ])
 
     # ---------- Sub-tab 1: Ringkasan per Lokasi ----------
@@ -1039,7 +969,7 @@ with tabs[9]:
             st.plotly_chart(fig, use_container_width=True)
             st.dataframe(sm1, use_container_width=True, hide_index=True, height=400)
             st.download_button(
-                "📥 Download Ringkasan (Excel)",
+                "ðŸ“¥ Download Ringkasan (Excel)",
                 data=to_excel_bytes({"Ringkasan_Satuan": sm1}),
                 file_name="ringkasan_satuan.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1054,7 +984,7 @@ with tabs[9]:
         st.dataframe(det1, use_container_width=True, hide_index=True, height=500)
         st.caption(f"Total {len(det1):,} baris.")
         st.download_button(
-            "📥 Download Detail (Excel)",
+            "ðŸ“¥ Download Detail (Excel)",
             data=to_excel_bytes({"Detail_Satuan": det1}),
             file_name="detail_satuan.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1082,7 +1012,7 @@ with tabs[9]:
             st.plotly_chart(fig, use_container_width=True)
             st.dataframe(tp1, use_container_width=True, hide_index=True, height=400)
             st.download_button(
-                "📥 Download (Excel)",
+                "ðŸ“¥ Download (Excel)",
                 data=to_excel_bytes({"Top_Item_Satuan": tp1}),
                 file_name="top_item_satuan.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1111,7 +1041,7 @@ with tabs[9]:
             st.plotly_chart(fig_all, use_container_width=True)
             st.dataframe(top_all, use_container_width=True, hide_index=True, height=400)
             st.download_button(
-                "📥 Download Top Keseluruhan (Excel)",
+                "ðŸ“¥ Download Top Keseluruhan (Excel)",
                 data=to_excel_bytes({"Top_Keseluruhan": top_all}),
                 file_name="top_keseluruhan.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1136,10 +1066,10 @@ with tabs[9]:
             )
             fig.update_layout(height=450, barmode="group")
             st.plotly_chart(fig, use_container_width=True)
-            st.caption(f"Total {len(dd1):,} kombinasi diskon×lokasi.")
+            st.caption(f"Total {len(dd1):,} kombinasi diskonÃ—lokasi.")
             st.dataframe(dd1, use_container_width=True, hide_index=True, height=350)
             st.download_button(
-                "📥 Download (Excel)",
+                "ðŸ“¥ Download (Excel)",
                 data=to_excel_bytes({"Dist_Diskon_Satuan": dd1}),
                 file_name="dist_diskon_satuan.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1159,7 +1089,7 @@ with tabs[9]:
         with sc4:
             sdate_to = st.date_input("Sampai", value=None, key="sdt1")
 
-        if st.button("🔎 Cari Item Satuan", type="primary", key="btn_sq1") and sq.strip():
+        if st.button("ðŸ”Ž Cari Item Satuan", type="primary", key="btn_sq1") and sq.strip():
             try:
                 summary_s, packages_s = a.search_single_items_by_item(
                     sq.strip(),
@@ -1171,12 +1101,12 @@ with tabs[9]:
                     st.warning(f"Tidak ada item satuan cocok '{sq}'.")
                 else:
                     cm1, cm2, cm3 = st.columns(3)
-                    cm1.metric("📋 Jumlah Baris", _format_int(summary_s["Jumlah Baris"]))
-                    cm2.metric("💰 Total Nilai", _format_rp(summary_s["Total Nilai (Rp)"]))
-                    cm3.metric("📊 Total QTY", _format_int(summary_s["Total QTY"]))
+                    cm1.metric("ðŸ“‹ Jumlah Baris", _format_int(summary_s["Jumlah Baris"]))
+                    cm2.metric("ðŸ’° Total Nilai", _format_rp(summary_s["Total Nilai (Rp)"]))
+                    cm3.metric("ðŸ“Š Total QTY", _format_int(summary_s["Total QTY"]))
                     st.dataframe(packages_s, use_container_width=True, hide_index=True, height=400)
                     st.download_button(
-                        "📥 Download (Excel)",
+                        "ðŸ“¥ Download (Excel)",
                         data=to_excel_bytes({
                             "Ringkasan": pd.DataFrame([summary_s]),
                             "Detail": packages_s,
@@ -1191,7 +1121,7 @@ with tabs[9]:
 # ---------------- TAB 11: STRATEGI PENJUALAN ----------------
 with tabs[10]:
     st.markdown(
-        '<div class="section-header">📦 Strategi Penjualan</div>',
+        '<div class="section-header">ðŸ“¦ Strategi Penjualan</div>',
         unsafe_allow_html=True,
     )
     st.caption(
@@ -1209,14 +1139,14 @@ with tabs[10]:
         try:
             df_s = pd.read_excel(stock_file)
             a.load_stock_data(df_s)
-            st.success(f"✅ Data Stok dimuat ({len(df_s):,} baris).")
+            st.success(f"âœ… Data Stok dimuat ({len(df_s):,} baris).")
         except Exception as e:
             st.error(f"Gagal memuat Data Stok: {e}")
 
     strat_tabs = st.tabs([
-        "🐌 Slow Moving",
-        "💀 Dead Stock",
-        "🎯 Rekomendasi Promosi",
+        "ðŸŒ Slow Moving",
+        "ðŸ’€ Dead Stock",
+        "ðŸŽ¯ Rekomendasi Promosi",
     ])
 
     # ---------- Sub-tab 1: Slow Moving ----------
@@ -1241,7 +1171,7 @@ with tabs[10]:
             )
         sm_top = st.slider("Tampilkan top N", 5, 200, 30, 5, key="sm_top")
 
-        with st.spinner("⏳ Menghitung slow moving items..."):
+        with st.spinner("â³ Menghitung slow moving items..."):
             try:
                 sm_data = a.slow_moving_items(
                     view="all",
@@ -1251,18 +1181,18 @@ with tabs[10]:
                     top_n=sm_top,
                 )
             except Exception as e:
-                st.error(f"❌ Error di slow_moving_items: {type(e).__name__}: {e}")
+                st.error(f"âŒ Error di slow_moving_items: {type(e).__name__}: {e}")
                 import traceback
-                with st.expander("🔍 Detail traceback"):
+                with st.expander("ðŸ” Detail traceback"):
                     st.code(traceback.format_exc())
                 st.stop()
         sm_view = st.radio(
             "Pilih view:",
             ["bottom_pct", "fixed_threshold", "decline"],
             format_func=lambda x: {
-                "bottom_pct": f"📊 Bottom {sm_bottom}% (AVG qty/hari paling rendah)",
-                "fixed_threshold": f"🎯 Fixed threshold <{sm_threshold} qty/hari",
-                "decline": f"📉 Penurunan >{sm_decline}% vs paruh pertama",
+                "bottom_pct": f"ðŸ“Š Bottom {sm_bottom}% (AVG qty/hari paling rendah)",
+                "fixed_threshold": f"ðŸŽ¯ Fixed threshold <{sm_threshold} qty/hari",
+                "decline": f"ðŸ“‰ Penurunan >{sm_decline}% vs paruh pertama",
             }[x],
             horizontal=True,
             key="sm_view",
@@ -1281,7 +1211,7 @@ with tabs[10]:
                 fig.update_layout(height=300)
                 st.plotly_chart(fig, use_container_width=True)
             st.download_button(
-                "📥 Download Slow Moving (Excel)",
+                "ðŸ“¥ Download Slow Moving (Excel)",
                 data=to_excel_bytes({
                     "Bottom_Percentile": sm_data.get("bottom_pct", pd.DataFrame()),
                     "Fixed_Threshold": sm_data.get("fixed_threshold", pd.DataFrame()),
@@ -1304,13 +1234,13 @@ with tabs[10]:
             help="Default 60 hari. Bisa diatur sesuai karakter bisnis Anda."
         )
         ds_top = st.slider("Tampilkan top N", 10, 500, 100, 10, key="ds_top")
-        with st.spinner(f"⏳ Mencari item yang tidak laku {ds_days} hari..."):
+        with st.spinner(f"â³ Mencari item yang tidak laku {ds_days} hari..."):
             try:
                 ds_df = a.dead_stock_items(days=ds_days, top_n=ds_top)
             except Exception as e:
-                st.error(f"❌ Error di dead_stock_items: {type(e).__name__}: {e}")
+                st.error(f"âŒ Error di dead_stock_items: {type(e).__name__}: {e}")
                 import traceback
-                with st.expander("🔍 Detail traceback"):
+                with st.expander("ðŸ” Detail traceback"):
                     st.code(traceback.format_exc())
                 st.stop()
         st.markdown(f"**{len(ds_df)} item** terdeteksi dead stock (> {ds_days} hari tidak laku).")
@@ -1325,7 +1255,7 @@ with tabs[10]:
                 st.metric("Total Revenue (lifetime)", _format_rp(ds_df['LIFETIME_REVENUE'].sum()))
             with c4:
                 urgent = (ds_df['DAYS_SINCE_SALE'] > 90).sum()
-                st.metric("🔴 Kritis (>90h)", f"{urgent:,}")
+                st.metric("ðŸ”´ Kritis (>90h)", f"{urgent:,}")
             st.dataframe(ds_df, use_container_width=True, hide_index=True, height=400)
             # Distribusi days_since_sale
             fig = px.histogram(
@@ -1337,14 +1267,14 @@ with tabs[10]:
             fig.update_layout(height=350)
             st.plotly_chart(fig, use_container_width=True)
             st.download_button(
-                "📥 Download Dead Stock (Excel)",
+                "ðŸ“¥ Download Dead Stock (Excel)",
                 data=to_excel_bytes({"Dead_Stock": ds_df}),
                 file_name=f"dead_stock_{ds_days}h.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="dl_dead",
             )
         else:
-            st.info(f"🎉 Tidak ada dead stock (> {ds_days} hari tidak laku). Semua item masih aktif!")
+            st.info(f"ðŸŽ‰ Tidak ada dead stock (> {ds_days} hari tidak laku). Semua item masih aktif!")
 
     # ---------- Sub-tab 3: Rekomendasi Promosi ----------
     with strat_tabs[2]:
@@ -1371,7 +1301,7 @@ with tabs[10]:
             10, 80, 30, 5, key="pr_cost",
             help="Default 30%. Sesuaikan dengan bisnis Anda."
         )
-        with st.spinner("⏳ Menganalisa 4 strategi promosi..."):
+        with st.spinner("â³ Menganalisa 4 strategi promosi..."):
             try:
                 pr_data = a.promo_recommendations(
                     cost_pct_assumption=pr_cost_pct,
@@ -1381,22 +1311,22 @@ with tabs[10]:
                     top_n_per_strategy=pr_top,
                 )
             except Exception as e:
-                st.error(f"❌ Error di promo_recommendations: {type(e).__name__}: {e}")
+                st.error(f"âŒ Error di promo_recommendations: {type(e).__name__}: {e}")
                 import traceback
-                with st.expander("🔍 Detail traceback"):
+                with st.expander("ðŸ” Detail traceback"):
                     st.code(traceback.format_exc())
                 st.stop()
         promo_tabs = st.tabs([
-            "🧹 Clearance (slow + high margin)",
-            "🚀 Momentum (trending up)",
-            "🛒 Cross-sell (market basket)",
-            "📅 Musiman (seasonal)",
+            "ðŸ§¹ Clearance (slow + high margin)",
+            "ðŸš€ Momentum (trending up)",
+            "ðŸ›’ Cross-sell (market basket)",
+            "ðŸ“… Musiman (seasonal)",
         ])
         strat_titles = {
-            "clearance": "Clearance: slow-moving + margin tinggi → Diskon / Bundle",
-            "momentum": "Momentum: QTY naik signifikan → Pertahankan + tambah stok",
-            "basket": "Cross-sell: item komplementer best-seller → Bundle combo",
-            "seasonal": "Musiman: pola peak/off months → Stok + promo terjadwal",
+            "clearance": "Clearance: slow-moving + margin tinggi â†’ Diskon / Bundle",
+            "momentum": "Momentum: QTY naik signifikan â†’ Pertahankan + tambah stok",
+            "basket": "Cross-sell: item komplementer best-seller â†’ Bundle combo",
+            "seasonal": "Musiman: pola peak/off months â†’ Stok + promo terjadwal",
         }
         for i, strat in enumerate(["clearance", "momentum", "basket", "seasonal"]):
             with promo_tabs[i]:
@@ -1412,7 +1342,7 @@ with tabs[10]:
         sheets_to_dl = {f"{s}_{strat_titles[s].split(':')[0]}": pr_data.get(s, pd.DataFrame())
                         for s in ["clearance", "momentum", "basket", "seasonal"]}
         st.download_button(
-            "📥 Download Semua Rekomendasi (1 Excel, 4 sheet)",
+            "ðŸ“¥ Download Semua Rekomendasi (1 Excel, 4 sheet)",
             data=to_excel_bytes(sheets_to_dl),
             file_name="rekomendasi_promosi.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1421,11 +1351,11 @@ with tabs[10]:
 
 # ---------------- TAB 12: BASKET ANALYSIS ----------------
 with tabs[11]:
-    st.markdown('<div class="section-header">🧺 Analisis Basket Transaksi</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">ðŸ§º Analisis Basket Transaksi</div>', unsafe_allow_html=True)
     st.caption("Distribusi nilai transaksi berdasarkan total nett per NOTRAN.")
     _df_b = a.df if a is not None and hasattr(a, "df") and a.df is not None and not a.df.empty and "FDATE" in a.df.columns else None
     if _df_b is None:
-        st.warning("Data kosong setelah filter. Penyebab paling umum: **filter FLOCCD** di sidebar kiri terlalu ketat (kosongkan jika ragu). Upload ulang & klik **🚀 Proses Data**.")
+        st.warning("Data kosong setelah filter. Penyebab paling umum: **filter FLOCCD** di sidebar kiri terlalu ketat (kosongkan jika ragu). Upload ulang & klik **ðŸš€ Proses Data**.")
     else:
         locs = sorted(_df_b["FLOCCD"].unique().tolist())
         bulan_list = sorted(_df_b["FDATE"].dt.month.unique().tolist())
@@ -1440,7 +1370,7 @@ with tabs[11]:
             lokasi_pilihan = st.multiselect("Pilih Lokasi pembanding", locs, key="bsk_loks")
         with col4:
             st.markdown("<br>", unsafe_allow_html=True)
-            run_bsk = st.button("🔄 Proses Basket", type="primary", use_container_width=True)
+            run_bsk = st.button("ðŸ”„ Proses Basket", type="primary", use_container_width=True)
         if run_bsk:
             try:
                 basket_df = a.basket_analysis(floocd=floocd_val, bulan=bulan_val)
@@ -1449,7 +1379,7 @@ with tabs[11]:
                 else:
                     basket_df["TOTAL NETT"] = basket_df["TOTAL NETT"].round(0).astype(int)
                     basket_df["RATA-RATA BASKET"] = basket_df["RATA-RATA BASKET"].round(0).astype(int)
-                    st.subheader("📊 Distribusi Basket")
+                    st.subheader("ðŸ“Š Distribusi Basket")
                     cola, colb = st.columns([3, 2])
                     with cola:
                         fig1 = px.bar(basket_df, x="BASKET", y="JUMLAH TRANSAKSI",
@@ -1462,11 +1392,11 @@ with tabs[11]:
                                       title="Kontribusi Revenue per Basket")
                         fig2.update_traces(textposition="inside", textinfo="label+percent")
                         st.plotly_chart(fig2, use_container_width=True)
-                    st.subheader("📋 Tabel Basket")
+                    st.subheader("ðŸ“‹ Tabel Basket")
                     fmt = {"TOTAL NETT": "Rp{:,.0f}", "RATA-RATA BASKET": "Rp{:,.0f}"}
                     st.dataframe(basket_df.style.format(fmt), use_container_width=True, hide_index=True, height=350)
                     if lokasi_pilihan:
-                        st.subheader("🏪 Perbandingan per Lokasi")
+                        st.subheader("ðŸª Perbandingan per Lokasi")
                         by_loc = a.basket_by_location(lokasi_pilihan, bulan=bulan_val)
                         if not by_loc.empty:
                             st.dataframe(by_loc, use_container_width=True, hide_index=True, height=300)
@@ -1475,13 +1405,13 @@ with tabs[11]:
                                           title="Perbandingan Basket per Lokasi")
                             st.plotly_chart(fig3, use_container_width=True)
                     csv = basket_df.to_csv(index=False).encode()
-                    st.download_button("⬇️ Download CSV", csv, "basket_analysis.csv", "text/csv")
+                    st.download_button("â¬‡ï¸ Download CSV", csv, "basket_analysis.csv", "text/csv")
             except Exception as e:
                 st.error(f"Error: {e}")
 
 # Footer
 st.markdown("---")
 st.caption(
-    f"💎 Sales Analyzer · Web Edition · "
-    f"Streamlit + Plotly · Data: `{st.session_state.file_name}`"
+    f"ðŸ’Ž Sales Analyzer Â· Web Edition Â· "
+    f"Streamlit + Plotly Â· Data: `{st.session_state.file_name}`"
 )

@@ -44,14 +44,23 @@ python bundle_analyzer.py
 .
 ├── bundle_analyzer.py        # Source code utama (analyzer + GUI + CLI)
 ├── bundle_analyzer_web.py    # Web app (Streamlit + Plotly)
+├── auth.py                   # Modul login terpusat (bcrypt + secrets)
+├── pages/                    # Halaman multi-page Streamlit
+│   ├── 1_Stock_Sales_Analyzer.py
+│   ├── 2_YoY_Forecast.py
+│   ├── 3_Stock_Card.py
+│   └── 4_Stock_Opname.py
+├── tests/                    # Unit tests (pytest)
+├── .github/workflows/ci.yml  # CI: test otomatis setiap push
 ├── PANDUAN.md                # Dokumentasi lengkap (Indonesia)
-├── requirements.txt          # Dependency web
+├── requirements.txt          # Dependency web (pinned range)
 ├── run_web.bat               # Shortcut Windows untuk web
 ├── build.bat                 # Rebuild executable
-├── dist/
-│   └── BundleAnalyzer.exe    # Executable Windows (75 MB)
 └── .gitignore
 ```
+> 📥 Executable desktop `BundleAnalyzer.exe` tidak ikut di git —
+> download dari **GitHub Releases**:
+> https://github.com/tonizz/sales-analyzer/releases
 
 ## Lisensi
 
@@ -83,44 +92,32 @@ Aplikasi web bisa di-deploy gratis ke **Streamlit Community Cloud** agar bisa di
 - ✅ `.streamlit/config.toml` — theme & server config
 
 ### Catatan:
-- Repo harus **public** (sudah)
+- Repo sudah **private** — Streamlit Cloud tetap bisa deploy dari repo private (login dengan GitHub)
 - Setiap push ke branch `main` → otomatis re-deploy
 - Free tier: app tidur setelah 7 hari tidak ada访问, otomatis bangun saat ada yang akses
 - Free tier: 1 GB RAM, cukup untuk data 100k+ baris
 
 ## 🔐 Autentikasi (Password Gate)
 
-App ini diproteksi login. **Default credentials** (dev only — untuk testing):
+Semua halaman memakai login terpusat di `auth.py` (bcrypt, login sekali
+untuk semua halaman).
 
-| Username | Password |
-|---|---|
-| `admin` | `admin123` |
-| `tonizz` | `tonizz2026` |
-
-### Ganti password di production:
-
-1. Generate bcrypt hash baru:
+**Setup production (WAJIB di Streamlit Cloud):**
+1. Generate bcrypt hash:
    ```python
    import bcrypt; print(bcrypt.hashpw(b"password_baru", bcrypt.gensalt()).decode())
    ```
-2. Buka https://share.streamlit.io/ → klik app → **Settings** → **Secrets**
-3. Isi format TOML:
+2. https://share.streamlit.io/ → klik app → **Settings** → **Secrets**:
    ```toml
    [users]
    admin = "$2b$12$..."
    tonizz = "$2b$12$..."
    ```
-4. Save → app auto-restart, password baru aktif
+3. Save → app auto-restart. Jika secrets kosong, fallback dev dipakai
+   (akan muncul warning di halaman login).
 
-### Tambah user baru:
-
-Cukup tambah baris di secrets.toml:
-```toml
-[users]
-admin = "$2b$12$..."
-tonizz = "$2b$12$..."
-user_baru = "$2b$12$..."
-```
+Tidak ada hint password yang ditampilkan di UI. Repo ini **private** —
+jangan pernah ubah ke public selama file data (`*.xlsx`) masih di-track.
 
 ## 📡 Auto-fetch dari Google Drive (opsional)
 
