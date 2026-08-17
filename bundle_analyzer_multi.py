@@ -327,6 +327,110 @@ class MultiYearAnalyzer:
         out = out.sort_values(["FLOCCD", "Tahun", "Bulan"]).reset_index(drop=True)
         return out
 
+    def forecast_backtest(self, holdout_months: int = 3) -> pd.DataFrame:
+        """Validasi akurasi model GradientBoosting via backtest.
+
+        Cara kerja:
+        1. Ambil semua bulan data, potong `holdout_months` bulan terakhir
+           sebagai data uji (actual diketahui).
+        2. Latih GradientBoostingRegressor hanya pada data latih.
+        3. Prediksi revenue bulan-bulan holdout.
+        4. Hitung error per bulan + MAPE overall + MAPE per lokasi.
+
+        Return DataFrame 1 baris per (FLOCCD, bulan) dengan kolom:
+        FLOCCD, YM, Actual, Predicted, Error, Error_Pct.
+        Metrik ringkasan tersedia lewat `forecast_accuracy_summary()`.
+        """
+        from sklearn.ensemble import GradientBoostingRegressor
+
+        self._check_loaded()
+        rows = []
+        for loc in self._get_common_locs():
+            sub = self.df_all[self.df_all["FLOCCD"] == loc]
+            monthly = (
+                sub.groupby(["YEAR", "MONTH", "YM"], as_index=False)["LINE_NETT"]
+                .sum()
+                .sort_values(["YEAR", "MONTH"])
+                .reset_index(drop=True)
+            )
+            if len(monthly) < 5:  # butuh cukup data untuk train/test split
+                continue
+            monthly = monthly.reset_index()
+            monthly["Period"] = range(len(monthly))
+            if "MONTH" not in monthly.columns:
+                monthly["MONTH"] = monthly["YM"].str.split("-").str[1].astype(int)
+
+            n = len(monthly)
+            train = monthly.iloc[: n - holdout_months]
+            test = monthly.iloc[n - holdout_months:]
+            if len(train) < 3 or len(test) == 0:
+                continue
+
+            X_tr = train[["Period", "MONTH"]].values
+            y_tr = train["LINE_NETT"].values.astype(float)
+            model = GradientBoostingRegressor(random_state=42)
+            model.fit(X_tr, y_tr)
+
+            X_te = test[["Period", "MONTH"]].values
+            preds = model.predict(X_te)
+            actuals = test["LINE_NETT"].values.astype(float)
+
+            for (_, m), act, pred in zip(test.iterrows(), actuals, preds):
+                err = float(pred) - act
+                err_pct = (err / act * 100.0) if act != 0 else 0.0
+                rows.append({
+                    "FLOCCD": loc,
+                    "YM": m["YM"],
+                    "Bulan": self._month_name(int(m["MONTH"])),
+                    "Actual": float(act),
+                    "Predicted": round(float(pred), 0),
+                    "Error": round(err, 0),
+                    "Error_Pct": round(err_pct, 2),
+                })
+
+        out = pd.DataFrame(rows)
+        if not out.empty:
+            out["AbsError_Pct"] = out["Error_Pct"].abs()
+        return out
+
+    def forecast_accuracy_summary(self, holdout_months: int = 3) -> dict:
+        """Ringkasan akurasi backtest per lokasi + overall.
+
+        Return:
+        {
+            "overall": {"mape": float, "bias": float, "n": int},
+            "per_location": DataFrame,
+            "detail": DataFrame,
+        }
+        """
+        detail = self.forecast_backtest(holdout_months)
+        if detail.empty:
+            return {
+                "overall": {"mape": None, "bias": None, "n": 0},
+                "per_location": pd.DataFrame(),
+                "detail": detail,
+            }
+        per_loc = (
+            detail.groupby("FLOCCD")
+            .agg(
+                MAPE_Pct=("AbsError_Pct", "mean"),
+                Bias_Pct=("Error_Pct", "mean"),
+                N_Bulan=("YM", "count"),
+                Actual_Sum=("Actual", "sum"),
+                Predicted_Sum=("Predicted", "sum"),
+            )
+            .reset_index()
+            .sort_values("MAPE_Pct")
+        )
+        per_loc["MAPE_Pct"] = per_loc["MAPE_Pct"].round(2)
+        per_loc["Bias_Pct"] = per_loc["Bias_Pct"].round(2)
+        overall = {
+            "mape": round(float(detail["AbsError_Pct"].mean()), 2),
+            "bias": round(float(detail["Error_Pct"].mean()), 2),
+            "n": int(len(detail)),
+        }
+        return {"overall": overall, "per_location": per_loc, "detail": detail}
+
     def _last_ym(self) -> tuple[int, int]:
         df = self.df_all
         last = df["FDATE"].max()

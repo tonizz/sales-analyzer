@@ -532,3 +532,72 @@ with tab[9]:
         "Keduanya contoh **supervised** (regression — butuh label Y) dan "
         "**unsupervised** (clustering — tanpa label) learning."
     )
+
+    st.divider()
+
+    st.markdown("### 3️⃣ Validasi Forecast (Backtest — akurasi model)")
+    st.caption(
+        "**Cara kerja**: 3 bulan terakhir data *disembunyikan* dari model, model dilatih "
+        "tanpa bulan-bulan itu, lalu dipaksa memprediksi bulan tersebut. Hasil prediksi "
+        "dibandingkan dengan aktual → didapat **MAPE** (Mean Absolute Percentage Error). "
+        "Ini menunjukkan seberapa bisa dipercaya prediksi 6 bulan di atas. "
+        "MAPE < 15% = akurat, 15–30% = cukup, > 30% = gunakan dengan hati-hati."
+    )
+
+    holdout = st.slider("Jumlah bulan backtest", 1, 6, 3, key="bt_holdout")
+    if st.button("🎯 Hitung Akurasi Backtest", type="primary", key="btn_backtest"):
+        with st.spinner("⏳ Menjalankan backtest per lokasi..."):
+            try:
+                acc = st.session_state["bt_acc"] = m.forecast_accuracy_summary(holdout)
+            except Exception as e:
+                st.error(f"Backtest gagal: {e}")
+                acc = None
+        if acc:
+            st.toast("Backtest selesai! ✅", icon="🎯")
+            st.rerun()
+
+    if "bt_acc" in st.session_state:
+        acc = st.session_state["bt_acc"]
+        ov = acc["overall"]
+        if ov["n"] == 0:
+            st.warning("Data tidak cukup untuk backtest (butuh minimal 5 bulan per lokasi).")
+        else:
+            c1, c2, c3 = st.columns(3)
+            mape = ov["mape"]
+            quality = ("🟢 Akurat" if mape < 15 else "🟡 Cukup" if mape < 30 else "🔴 Hati-hati")
+            c1.metric("MAPE Overall", f"{mape:.1f}%", quality)
+            c2.metric("Bias (arah)", f"{ov['bias']:+.1f}%",
+                      "over-estimasi" if ov["bias"] > 0 else "under-estimasi")
+            c3.metric("Bulan diuji", ov["n"])
+
+            per_loc = acc["per_location"]
+            st.markdown("#### Akurasi per lokasi")
+            st.dataframe(
+                per_loc, use_container_width=True, hide_index=True,
+                column_config={
+                    "MAPE_Pct": st.column_config.NumberColumn("MAPE %", format="%.1f"),
+                    "Bias_Pct": st.column_config.NumberColumn("Bias %", format="%+.1f"),
+                    "Actual_Sum": st.column_config.NumberColumn("Actual (Rp)", format="%,.0f"),
+                    "Predicted_Sum": st.column_config.NumberColumn("Forecast (Rp)", format="%,.0f"),
+                },
+            )
+
+            fig_acc = px.bar(
+                per_loc.sort_values("MAPE_Pct"), x="MAPE_Pct", y="FLOCCD",
+                color="MAPE_Pct", color_continuous_scale="RdYlGn_r",
+                title=f"MAPE per Lokasi (backtest {holdout} bulan terakhir)",
+                text="MAPE_Pct", orientation="h",
+            )
+            fig_acc.update_layout(height=450, coloraxis_showscale=False)
+            st.plotly_chart(fig_acc, use_container_width=True)
+
+            with st.expander("🔍 Detail per bulan"):
+                st.dataframe(acc["detail"].sort_values(["FLOCCD", "YM"]),
+                             use_container_width=True, hide_index=True, height=400)
+
+            if mape >= 30:
+                st.warning(
+                    "⚠️ MAPE > 30% — prediksi 6 bulan ke depan punya potensi error besar. "
+                    "Pertimbangkan menambah data tahun atau gunakan forecast per lokasi "
+                    "yang MAPE-nya rendah saja untuk keputusan."
+                )
