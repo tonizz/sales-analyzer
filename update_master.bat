@@ -17,8 +17,8 @@ if %errorlevel% neq 0 ( echo ERROR: gen_lokasi_map.py gagal! & pause & exit /b 1
 
 echo.
 echo [3/3] Commit ke GitHub...
-git add .
-git commit -m "update master data %date% %time%"
+git add doc\*.json docs\index.html gen_*.py opname_scanner.html .gitignore update_master.bat DBKSTHN_55_2026.xlsx DBUTHN_55_2026.xlsx DBZTHN_55_2026.xlsx
+git diff --cached --quiet || git commit -m "update master data %date% %time%"
 git push
 if %errorlevel% equ 0 (
   echo.
