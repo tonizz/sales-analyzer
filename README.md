@@ -11,13 +11,25 @@ Lihat [`PANDUAN.md`](./PANDUAN.md) untuk dokumentasi lengkap.
 
 ## Fitur
 
+Web app 14 tab + 4 halaman multi-page:
+
 - Deteksi otomatis paket/bundle (NOTRAN punya ≥2 item, semua diskon sama)
 - Ringkasan per lokasi, distribusi diskon, detail audit
 - Top combo paket, top item di paket, pencarian item
-- Analisa margin bundle vs non-bundle
+- Analisa margin bundle vs non-bundle (+ Master Cost & Data Stok)
 - Perbandingan 2 periode (preset atau custom)
 - Trend chart harian/bulanan
 - **Item satuan (non-bundle)**: ringkasan, detail, top item, distribusi diskon, pencarian
+- Strategi penjualan: slow moving, dead stock, rekomendasi promo
+- Basket analysis (nilai keranjang per lokasi)
+- **⚡ KPI Harian** — snapshot hari terakhir vs rata-rata 7/30 hari, top item, alert stok
+- **📤 Notifikasi** — kirim ringkasan KPI ke Telegram Bot / Webhook
+- **🧑‍💼 Performa Kasir** — ranking penjualan kasir + deteksi anomali diskon (fraud detection)
+- **🏷️ Efektivitas Promo** — perbandingan volume item saat promo vs normal
+- **📅 YoY & Forecast** (halaman) — multi-tahun, seasonal, GradientBoosting forecast
+  + **🎯 validasi backtest MAPE** (ukur akurasi forecast)
+- **📦 Stock Card** (halaman) — kartu stok per PLU/lokasi/bulan
+- **🧮 Stock Opname** (halaman + scanner barcode GitHub Pages)
 - Export ke Excel multi-sheet
 
 ## Quick start
@@ -45,6 +57,7 @@ python bundle_analyzer.py
 ├── bundle_analyzer.py        # Source code utama (analyzer + GUI + CLI)
 ├── bundle_analyzer_web.py    # Web app (Streamlit + Plotly)
 ├── auth.py                   # Modul login terpusat (bcrypt + secrets)
+├── notifications.py          # Kirim alert ke Telegram / Webhook
 ├── pages/                    # Halaman multi-page Streamlit
 │   ├── 1_Stock_Sales_Analyzer.py
 │   ├── 2_YoY_Forecast.py
@@ -94,7 +107,7 @@ Aplikasi web bisa di-deploy gratis ke **Streamlit Community Cloud** agar bisa di
 ### Catatan:
 - Repo saat ini **public** (tahap pengembangan). ⚠️ Jika suatu saat bos minta private: ubah visibility, Pages scanner toko akan mati (Pages gratis hanya untuk repo public) — alternatif: serve scanner via `opname_server.py` atau pindah ke Cloudflare Pages
 - Setiap push ke branch `main` → otomatis re-deploy
-- Free tier: app tidur setelah 7 hari tidak ada访问, otomatis bangun saat ada yang akses
+- Free tier: app tidur setelah 7 hari tidak ada akses, otomatis bangun saat ada yang akses
 - Free tier: 1 GB RAM, cukup untuk data 100k+ baris
 
 ## 🔐 Autentikasi (Password Gate)
@@ -137,3 +150,32 @@ url = "https://drive.google.com/file/d/1ABC...XYZ/view?usp=sharing"
 ```
 
 Update file di Drive = klik refresh = data baru. Detail lengkap: lihat [PANDUAN.md](./PANDUAN.md) section 13.
+
+## 📤 Notifikasi Alert (Telegram / Webhook)
+
+Tab **⚡ KPI Harian** bisa mengirim ringkasan (revenue hari terakhir, top item,
+dead stock, stok menipis) ke **Telegram Bot** atau **Webhook** generik (Slack dll).
+
+### Setup Telegram Bot (2 menit):
+1. Chat [@BotFather](https://t.me/BotFather) di Telegram → `/newbot` → beri nama → copy **token** (format `123456:ABC...`)
+2. Tambahkan bot ke grup/channel, atau chat bot lalu kunjungi
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` untuk dapat **chat_id**
+3. Isi di app (tab KPI → kirim notifikasi), **atau** simpan permanen di
+   **Streamlit Cloud > Secrets**:
+   ```toml
+   [telegram]
+   bot_token = "123456:ABC-def..."
+   chat_id   = "-1001234567890"
+
+   [webhook]            # opsional, untuk Slack/endpoint custom
+   url = "https://hooks.slack.com/services/..."
+   ```
+4. Buka tab **⚡ KPI Harian** → **📤 Kirim Ringkasan** → pilih Telegram / Webhook.
+
+> Logic ada di `notifications.py`. Bisa juga dipanggil dari script lain:
+> ```python
+> from notifications import build_kpi_alert, send_telegram
+> msg = build_kpi_alert(kpi_dict)
+> send_telegram(token, chat_id, msg)
+> ```
+

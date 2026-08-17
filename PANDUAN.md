@@ -1160,45 +1160,28 @@ Scan barcode pakai kamera HP langsung di browser — tanpa install aplikasi.
 
 ```
 D:\scr\
-├── bundle_analyzer.py              ← Main analyzer class (28 method)
-├── bundle_analyzer_web.py          ← Streamlit web app (12 tab utama)
+├── bundle_analyzer.py              ← Main analyzer class (45+ method: bundle, kasir, KPI, promo)
+├── bundle_analyzer_web.py          ← Streamlit web app (14 tab utama)
 ├── auth.py                         ← Modul login terpusat (bcrypt + secrets) — dipakai semua halaman
-├── stock_sales_analyzer.py         ← Stand-alone stock & sales analyzer (BARU, 32 KB)
-├── bundle_analyzer_multi.py        ← Multi-year analyzer (N tahun) (BARU, 550+ baris)
-├── stock_card.py                   ← Stock card analyzer (BARU)
+├── notifications.py                ← Kirim alert KPI ke Telegram Bot / Webhook
+├── stock_sales_analyzer.py         ← Stand-alone stock & sales analyzer (32 KB)
+├── bundle_analyzer_multi.py        ← Multi-year analyzer + forecast backtest MAPE
+├── stock_card.py                   ← Stock card analyzer
+├── opname_server.py                ← FastAPI server stock opname HO (mode LAN)
 ├── pages/
-│   ├── 1_Stock_Sales_Analyzer.py   ← Streamlit page: Stock Sales (BARU)
-│   ├── 2_YoY_Forecast.py           ← Streamlit page: Multi-Year 9 tab (BARU)
-│   └── 3_Stock_Card.py             ← Streamlit page: Stock Card (BARU)
+│   ├── 1_Stock_Sales_Analyzer.py   ← Streamlit page: Stock & Sales
+│   ├── 2_YoY_Forecast.py           ← Streamlit page: Multi-Year 10 tab (+ backtest)
+│   ├── 3_Stock_Card.py             ← Streamlit page: Stock Card
+│   └── 4_Stock_Opname.py           ← Streamlit page: Stock Opname HO
+├── docs/                           ← Scanner versi Pages (offline, export file)
+│   └── index.html                  ← https://tonizz.github.io/sales-analyzer/
+├── tests/                          ← Unit tests pytest (26 tests)
+├── .github/workflows/ci.yml        ← CI otomatis setiap push
 ├── scripts/
 │   └── fetch_data.py               ← CLI auto-fetch Google Drive
 ├── .streamlit/
-│   └── config.toml                 ← Theme + server config
-├── DBKSTHN_55_2025.xlsx            ← Data 2025 (51.955 rows, 33 FLOCCD) (BARU)
-├── DBKSTHN_55_2026.xlsx            ← Data 2026 (16.337 rows, 19 FLOCCD)
-├── DBKSTHN_55_2024.xlsx            ← Data 2024 (jika ada)
-├── DBKSTHN_55_2023.xlsx            ← Data 2023 (jika ada)
-├── DBUTHN_55_2026.xlsx             ← DBU mutasi stok (BARU, 38.656 rows)
-├── stok awal januari 2026.xlsx     ← Stok awal per PLU per lokasi (BARU, 4.445 rows)
-├── stock & sales all (4).xlsx      ← Multi-brand stock & sales (BARU, 5.6 MB)
-├── opname_server.py                ← Server FastAPI: scanner + API save/download (BARU)
-├── opname_scanner.html             ← Halaman scanner: kamera + manual + barcode lookup (BARU)
-├── opname_matcher.py               ← CLI matcher: scan vs stok sistem → Excel (BARU)
-├── gen_maps.py                     ← Generator barcode_map.json + nama_map.json (BARU)
-├── barcode_map.json                ← 243.115 barcode → PLU internal (BARU)
-├── nama_map.json                   ← 732 PLU → Nama Barang (BARU)
-├── barcodexls.xlsx                 ← Master barcode original (274.568 rows) (BARU)
-├── pages/
-│   ├── 1_Stock_Sales_Analyzer.py   ← Streamlit page: Stock Sales (BARU)
-│   ├── 2_YoY_Forecast.py           ← Streamlit page: Multi-Year 9 tab (BARU)
-│   ├── 3_Stock_Card.py             ← Streamlit page: Stock Card (BARU)
-│   └── 4_Stock_Opname.py           ← Streamlit page: Stock Opname HO (BARU)
-├── tests/                          ← Unit tests (pytest): deteksi bundle + rumus stock card
-├── .github/workflows/ci.yml        ← CI otomatis (test tiap push)
-├── PANDUAN.md                      ← Dokumentasi ini
-├── requirements.txt                ← Dependencies (pinned range)
-├── .gitignore
-└── run_web.bat                     ← Shortcut Streamlit
+│   └── config.toml                 ← Theme
+└── update_master.bat / gen_maps.py ← Skrip update master data harian
 ```
 
 > 📥 `dist/BundleAnalyzer.exe` TIDAK lagi di-track git (repo terlalu besar).
