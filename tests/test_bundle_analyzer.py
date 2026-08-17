@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit tests untuk logika inti BundleAnalyzer (deteksi bundle) dan StockCard
 (rumus kartu stok). Jalan tanpa file Excel/data riil.
 

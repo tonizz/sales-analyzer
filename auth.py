@@ -1,4 +1,4 @@
-﻿"""
+"""
 auth.py — Modul autentikasi terpusat untuk semua halaman Streamlit.
 
 Menggantikan ~20 baris duplikasi auth di setiap halaman:

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit tests untuk StockCard — rumus inti:
     StokAkhir = StokAwal + IN(EX+TR) - OUT(KR+BS+UP) - Terjual
 dengan carry-forward antar bulan.

@@ -1,4 +1,4 @@
-﻿# Dependencies web app (Streamlit Cloud — Python 3.11, lihat runtime.txt)
+# Dependencies web app (Streamlit Cloud — Python 3.11, lihat runtime.txt)
 # Pinned range: upper bound mencegah breaking change saat versi mayor baru rilis.
 streamlit>=1.30,<2
 pandas>=2.0,<4
