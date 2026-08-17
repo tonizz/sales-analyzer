@@ -92,7 +92,7 @@ Aplikasi web bisa di-deploy gratis ke **Streamlit Community Cloud** agar bisa di
 - ✅ `.streamlit/config.toml` — theme & server config
 
 ### Catatan:
-- Repo sudah **private** — Streamlit Cloud tetap bisa deploy dari repo private (login dengan GitHub)
+- Repo saat ini **public** (tahap pengembangan). ⚠️ Jika suatu saat bos minta private: ubah visibility, Pages scanner toko akan mati (Pages gratis hanya untuk repo public) — alternatif: serve scanner via `opname_server.py` atau pindah ke Cloudflare Pages
 - Setiap push ke branch `main` → otomatis re-deploy
 - Free tier: app tidur setelah 7 hari tidak ada访问, otomatis bangun saat ada yang akses
 - Free tier: 1 GB RAM, cukup untuk data 100k+ baris
@@ -116,8 +116,9 @@ untuk semua halaman).
 3. Save → app auto-restart. Jika secrets kosong, fallback dev dipakai
    (akan muncul warning di halaman login).
 
-Tidak ada hint password yang ditampilkan di UI. Repo ini **private** —
-jangan pernah ubah ke public selama file data (`*.xlsx`) masih di-track.
+Tidak ada hint password yang ditampilkan di UI. ⚠️ File data penjualan
+(`DBKSTHN_*.xlsx` dll) ikut di-track di repo ini. Selama repo public,
+data tersebut bisa dilihat publik — pertimbangkan private jika data sensitif.
 
 ## 📡 Auto-fetch dari Google Drive (opsional)
 

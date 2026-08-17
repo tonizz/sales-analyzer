@@ -1210,7 +1210,7 @@ D:\scr\
 - **Streamlit di lokal:** `http://localhost:8501`
 
 ### Catatan penting
-- Repo **PRIVATE** — jangan ubah ke public selama file data `*.xlsx` masih di-track
+- Repo saat ini **PUBLIC** (tahap pengembangan). Jika nanti harus private: Pages scanner toko mati, pakai `opname_server.py` (mode server) sebagai alternatif
 - Autentikasi terpusat di `auth.py`; halaman baru cukup `from auth import login_gate`
 - Semua kode baru di file terpisah (multi-page via `pages/`)
 - Untuk problem session cache di Streamlit Cloud: **push saja tidak cukup**, harus **reboot app** (⋮ → Reboot) di https://share.streamlit.io/
