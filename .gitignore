@@ -39,6 +39,7 @@ DBKSTHN_55_2025.xlsx
 bundle_analysis*.xlsx
 bundle_search_*.xlsx
 stock & sales all*.xlsx
+stock  & sales all*.xlsx
 output/
 
 # Output / generated — jangan di-commit
@@ -64,3 +65,14 @@ token_github.txt
 .env.*
 .streamlit/secrets.toml
 secrets.toml
+
+# Test / cache artifacts
+.pytest_cache/
+
+# MCP debug output (contoh_laporan.pdf & AVG.jpeg = sample manual, tidak di-commit)
+debug_mcp.txt
+hasil_mcp.txt
+respon.txt
+notif.txt
+AVG.jpeg
+contoh_laporan.pdf

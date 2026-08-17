@@ -1,6 +1,10 @@
-streamlit>=1.30
-pandas>=2.0
-openpyxl>=3.1
-plotly>=5.18
-bcrypt>=4.0
-scikit-learn>=1.3
+﻿# Dependencies web app (Streamlit Cloud — Python 3.11, lihat runtime.txt)
+# Pinned range: upper bound mencegah breaking change saat versi mayor baru rilis.
+streamlit>=1.30,<2
+pandas>=2.0,<4
+numpy>=1.26,<3
+openpyxl>=3.1,<4
+plotly>=5.18,<7
+bcrypt>=4.0,<5
+scikit-learn>=1.3,<2
+requests>=2.31,<3
