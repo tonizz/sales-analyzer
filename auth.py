@@ -20,7 +20,7 @@ Sumber kredensial (prioritas):
        (set via Streamlit Cloud: Settings -> Secrets, format TOML:
            [users]
            admin = "$2b$12$..." )
-    2. Fallback DEV: admin/admin123 dan tonizz/tonizz2026 (bcrypt hash).
+    2. Fallback DEV (bcrypt hash di source code, username: admin & tonizz).
        HANYA dipakai kalau secrets belum diset. Password default TIDAK
        pernah ditampilkan di UI.
 
