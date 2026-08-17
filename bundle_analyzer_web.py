@@ -99,6 +99,18 @@ PRESET_PERIODS = [
 # Autentikasi terpusat di auth.py (login sekali untuk semua halaman,
 # tanpa hint password di UI; production pakai Streamlit Cloud Secrets).
 from auth import login_gate, render_logout
+from notifications import build_kpi_alert, send_telegram, send_webhook
+
+
+def _get_secret(section: str, key: str) -> str:
+    """Ambil nilai Streamlit Secrets secara aman; return '' jika tidak ada."""
+    try:
+        if section in st.secrets:
+            return str(st.secrets[section].get(key, "") or "")
+    except Exception:
+        pass
+    return ""
+
 
 login_gate(subtitle="Sales Analyzer", form_key="login_main")
 
@@ -248,6 +260,10 @@ def process_file(uploaded, min_items, min_disc, loc_filter, date_preset, d_from,
             os.unlink(tmp)
         except Exception:
             pass
+
+
+# MIME type Excel untuk download_button
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def to_excel_bytes(sheets: dict) -> bytes:
@@ -451,6 +467,9 @@ tabs = st.tabs(
         "📋 Top & Satuan",
         "📦 Strategi Penjualan",
         "🧺 Basket",
+        "⚡ KPI Harian",
+        "🧑‍💼 Kasir",
+        "🏷️ Efektivitas Promo",
     ]
 )
 
@@ -1415,3 +1434,300 @@ st.caption(
     f"💎 Sales Analyzer · Web Edition · "
     f"Streamlit + Plotly · Data: `{st.session_state.file_name}`"
 )
+
+
+# ---------------- TAB 13: KPI HARIAN ----------------
+with tabs[12]:
+    st.markdown('<div class="section-header">⚡ Dashboard KPI Harian</div>', unsafe_allow_html=True)
+    st.caption(
+        "Snapshot hari terakhir data vs kemarin vs rata-rata 7 & 30 hari terakhir. "
+        "Termasuk item terlaris hari terakhir + alert dead stock / stok menipis."
+    )
+
+    # loc_filter sudah diterapkan saat load (process_file), df sudah ter-filter
+    kpi = a.kpi_dashboard()
+    if not kpi:
+        st.info("Tidak ada data untuk filter ini.")
+    else:
+        st.markdown(f"**📅 Hari terakhir data:** `{kpi['latest_date'].date()}`")
+        st.markdown("")
+
+        # --- Metrik utama ---
+        today, yest, a7, a30, growth = (
+            kpi["today"], kpi["yesterday"], kpi["avg_7d"], kpi["avg_30d"], kpi["growth"],
+        )
+
+        def _delta(g):
+            if g is None:
+                return None
+            return f"{g:+.1f}%"
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric(
+            "💰 Revenue Hari Terakhir", _format_rp(today["revenue"]),
+            delta=_delta(growth["revenue_vs_kemarin"]) or "vs kemarin",
+        )
+        c2.metric("🧾 Transaksi", f"{today['tx']:,}", delta=_delta(growth["tx_vs_kemarin"]) or "vs kemarin")
+        c3.metric("📦 Total QTY", f"{today['qty']:,}")
+
+        st.markdown("")
+        cc1, cc2, cc3 = st.columns(3)
+        cc1.metric("Revenue vs rata-rata 7 hari", _format_rp(today["revenue"]),
+                   delta=_delta(growth["revenue_vs_avg7d"]) or "vs avg 7d")
+        cc2.metric("Revenue vs rata-rata 30 hari", _format_rp(today["revenue"]),
+                   delta=_delta(growth["revenue_vs_avg30d"]) or "vs avg 30d")
+        cc3.metric("Diskon rata-rata (item satuan)", f"{today['avg_disc_single']:.1f}%")
+
+        st.markdown("")
+        st.caption(
+            f"Rata-rata harian 7 hari: {_format_rp(a7['revenue_per_hari'])}/hari "
+            f"({a7['tx_per_hari']:.0f} tx/hari, {a7['n_hari']} hari aktif) · "
+            f"Rata-rata 30 hari: {_format_rp(a30['revenue_per_hari'])}/hari"
+        )
+        st.markdown("---")
+
+        # --- Top items hari terakhir ---
+        st.markdown("#### 🏆 Top Item Hari Terakhir (by QTY)")
+        top_today = kpi["top_items_today"]
+        if not top_today.empty:
+            st.dataframe(
+                top_today, use_container_width=True, hide_index=True,
+                column_config={
+                    "TOTAL_QTY": st.column_config.NumberColumn("QTY", format="%d"),
+                    "TOTAL_REVENUE": st.column_config.NumberColumn("Revenue (Rp)", format="%,.0f"),
+                },
+            )
+        else:
+            st.info("Tidak ada transaksi di hari terakhir filter ini.")
+        st.markdown("---")
+
+        # --- Alerts ---
+        alerts = kpi["alerts"]
+        st.markdown("#### 🚨 Alert Stok")
+        col_l, col_r = st.columns(2)
+
+        with col_l:
+            ds_count = alerts.get("dead_stock_count", 0)
+            if ds_count > 0:
+                st.error(f"💀 **Dead stock**: {ds_count} item tidak terjual 60 hari terakhir")
+                ds_val = alerts.get("dead_stock_value", 0)
+                if ds_val:
+                    st.caption(f"Potensi revenue idle: {_format_rp(ds_val)}")
+                ds_top = alerts.get("dead_stock_top")
+                if ds_top is not None and not ds_top.empty:
+                    st.dataframe(ds_top, use_container_width=True, hide_index=True, height=220)
+            else:
+                st.success("✅ Tidak ada dead stock (60 hari).")
+
+        with col_r:
+            low = alerts.get("low_stock_count")
+            if low is None:
+                st.info("ℹ️ Upload **Data Stok** di tab Strategi Penjualan untuk deteksi stok menipis.")
+            elif low > 0:
+                st.warning(f"⚠️ **Stok menipis**: {low} item ≤ 2 unit")
+                ls_top = alerts.get("low_stock_top")
+                if ls_top is not None and not ls_top.empty:
+                    st.dataframe(ls_top, use_container_width=True, hide_index=True, height=220)
+            else:
+                st.success("✅ Tidak ada stok kritis (≤2 unit).")
+
+        # --- Kirim Notifikasi ---
+        st.markdown("---")
+        st.markdown("#### 📤 Kirim Ringkasan sebagai Notifikasi")
+        with st.expander("⚙️ Kirim ke Telegram / Webhook"):
+            st.caption(
+                "Isi konfigurasi di bawah, atau set di **Streamlit Cloud > Secrets** agar tersimpan permanen:\n"
+                "`[telegram]` → `bot_token` + `chat_id`, atau `[webhook]` → `url`"
+            )
+            notif_tab = st.tabs(["📨 Telegram", "🪝 Webhook"])
+            msg_preview = None
+            with notif_tab[0]:
+                tg_token = st.text_input("Bot token", type="password", key="nt_token",
+                                          value=_get_secret("telegram", "bot_token"))
+                tg_chat = st.text_input("Chat ID", key="nt_chat",
+                                         value=_get_secret("telegram", "chat_id"))
+                if st.button("📨 Kirim ke Telegram", key="btn_nt_tg"):
+                    if not tg_token or not tg_chat:
+                        st.warning("Bot token dan chat ID wajib diisi.")
+                    else:
+                        msg = build_kpi_alert(
+                            kpi, app_url="https://sales-analyzer-itx.streamlit.app")
+                        try:
+                            res = send_telegram(tg_token, tg_chat, msg)
+                            if res.get("ok"):
+                                st.success("✅ Notifikasi terkirim ke Telegram!")
+                            else:
+                                st.error(f"❌ Gagal: {res.get('description', 'unknown')}")
+                        except Exception as e:
+                            st.error(f"❌ Error: {e}")
+            with notif_tab[1]:
+                wh_url = st.text_input("Webhook URL", key="nt_wh",
+                                        value=_get_secret("webhook", "url"))
+                if st.button("🪝 Kirim ke Webhook", key="btn_nt_wh"):
+                    if not wh_url:
+                        st.warning("URL webhook wajib diisi.")
+                    else:
+                        msg = build_kpi_alert(kpi)
+                        try:
+                            res = send_webhook(wh_url, msg)
+                            if res.get("ok"):
+                                st.success("✅ Notifikasi terkirim ke webhook!")
+                            else:
+                                st.error(f"❌ Gagal: {res.get('description', '')}")
+                        except Exception as e:
+                            st.error(f"❌ Error: {e}")
+            with st.expander("👀 Preview pesan"):
+                st.code(build_kpi_alert(kpi), language="text")
+
+
+# ---------------- TAB 14: KASIR ----------------
+with tabs[13]:
+    st.markdown('<div class="section-header">🧑‍💼 Performa Kasir & Deteksi Anomali</div>', unsafe_allow_html=True)
+    st.caption(
+        "Ranking penjualan per kasir + deteksi **anomali pola diskon** per kasir "
+        "(fraud detection). Diskon dibandingkan terhadap pola seluruh lokasi; "
+        "kasir yang selalu memberi diskon di luar pola ditandai ANOMALI."
+    )
+
+    kasir_tab = st.tabs(["📊 Performa Kasir", "🚨 Anomali Diskon"])
+
+    with kasir_tab[0]:
+        kp = a.kasir_performance()
+        if kp.empty:
+            st.info("Tidak ada data.")
+        else:
+            col_n, col_rev, col_tx = st.columns(3)
+            col_n.metric("Kasir aktif", f"{kp['KASIR'].nunique():,}")
+            col_rev.metric("Total Revenue", _format_rp(kp['TOTAL_REVENUE'].sum()))
+            col_tx.metric("Total Transaksi", f"{int(kp['JUMLAH_TX'].sum()):,}")
+
+            top_kasir = kp.sort_values("TOTAL_REVENUE", ascending=False)
+            st.markdown("#### 🏆 Top Kasir by Revenue")
+            st.dataframe(
+                top_kasir.head(50), use_container_width=True, hide_index=True,
+                column_config={
+                    "JUMLAH_TX": st.column_config.NumberColumn("Tx", format="%d"),
+                    "TOTAL_QTY": st.column_config.NumberColumn("QTY", format="%d"),
+                    "TOTAL_REVENUE": st.column_config.NumberColumn("Revenue (Rp)", format="%,.0f"),
+                    "AVG_DISC_PCT": st.column_config.NumberColumn("Avg Disc %", format="%.2f"),
+                    "BUNDLE_TX": st.column_config.NumberColumn("Bundle Tx", format="%d"),
+                    "AVG_REVENUE_PER_TX": st.column_config.NumberColumn("Rev/Tx (Rp)", format="%,.0f"),
+                },
+            )
+            if not top_kasir.empty:
+                fig_k = px.bar(
+                    top_kasir.head(15), x="TOTAL_REVENUE", y="KASIR",
+                    orientation="h", color="TOTAL_REVENUE",
+                    color_continuous_scale="Blues",
+                    title="Top 15 Kasir by Revenue",
+                )
+                fig_k.update_layout(height=480, coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig_k, use_container_width=True)
+            with st.expander("📥 Download full performa kasir"):
+                st.download_button(
+                    "💾 Download Excel — Performa Kasir",
+                    to_excel_bytes({"Performa_Kasir": kp}),
+                    file_name="performa_kasir.xlsx",
+                    mime=XLSX_MIME,
+                )
+
+    with kasir_tab[1]:
+        st.markdown("#### 🚨 Deteksi Anomali Diskon per Kasir")
+        st.caption(
+            "Menganalisa item **satuan** (non-bundle) saja, karena bundle selalu punya "
+            "diskon seragam (by design). Nilai Z-score tinggi = diskon kasir jauh "
+            "di luar pola normal lokasi tersebut."
+        )
+        z_th = st.slider("Threshold Z-score (anomali)", 1.5, 5.0, 2.5, 0.1, key="kt_z")
+        min_tx = st.slider("Min transaksi kasir", 5, 100, 20, 5, key="kt_mintx")
+        if st.button("🔍 Analisa Anomali", type="primary", key="btn_anomali"):
+            with st.spinner("⏳ Menghitung pola diskon per kasir..."):
+                st.session_state["anom_df"] = a.kasir_discount_anomaly(
+                    z_thresh=z_th, min_tx=min_tx,
+                )
+            st.rerun()
+
+        if "anom_df" in st.session_state:
+            an = st.session_state["anom_df"]
+            if an.empty:
+                st.info("Tidak ada data item satuan untuk analisa.")
+            else:
+                n_anom = int((an["STATUS"] == "ANOMALI").sum())
+                st.metric("Kasir terdeteksi ANOMALI", n_anom,
+                          "🟢 Aman" if n_anom == 0 else "🔴 Perlu review")
+                if n_anom:
+                    st.error(
+                        f"⚠️ {n_anom} kasir punya pola diskon tidak wajar. "
+                        "Review kolom `MEDIAN_DISC_KASIR` vs `MEDIAN_DISC_LOKASI`."
+                    )
+                st.dataframe(
+                    an, use_container_width=True, hide_index=True,
+                    column_config={
+                        "Z_SCORE": st.column_config.NumberColumn("Z-Score", format="%.2f"),
+                        "MEDIAN_DISC_KASIR": st.column_config.NumberColumn("Disc Kasir %", format="%.2f"),
+                        "MEDIAN_DISC_LOKASI": st.column_config.NumberColumn("Disc Lokasi %", format="%.2f"),
+                    },
+                )
+                with st.expander("📥 Download hasil anomali"):
+                    st.download_button(
+                        "💾 Download Excel — Anomali Kasir",
+                        to_excel_bytes({"Anomali_Kasir": an}),
+                        file_name="anomali_kasir.xlsx",
+                        mime=XLSX_MIME,
+                    )
+        else:
+            st.info("Klik **🔍 Analisa Anomali** untuk mulai.")
+
+
+
+# ---------------- TAB 15: EFEKTIVITAS PROMO ----------------
+with tabs[14]:
+    st.markdown('<div class="section-header">🏷️ Efektivitas Promo (Price Elasticity)</div>', unsafe_allow_html=True)
+    st.caption(
+        "Membandingkan penjualan item saat **diskon tinggi** vs **diskon rendah/normal**. "
+        "Membantu memutuskan item mana yang promo-nya benar-benar mendorong volume, "
+        "dan mana yang hanya menggerus margin tanpa menaikkan penjualan."
+    )
+
+    st.markdown(
+        "Item satuan diklasifikasikan ke 2 kelompok berdasarkan besarnya diskon: "
+        "**Promo** (diskon ≥ threshold) dan **Normal** (di bawahnya). "
+        "Kemudian dibandingkan volume & revenue per hari di tiap kelompok."
+    )
+
+    disc_th = st.slider("Batas 'promo' (% diskon)", 5.0, 80.0, 20.0, 1.0, key="pe_disc")
+
+    pe = a.promo_effectiveness(disc_threshold=disc_th)
+    if pe is None or getattr(pe, "empty", True):
+        st.info("Tidak ada data item satuan untuk analisa promo.")
+    else:
+        st.markdown("#### Ringkasan per Item (Promo vs Normal)")
+        st.dataframe(
+            pe, use_container_width=True, hide_index=True, height=450,
+            column_config={
+                "PROMO_QTY": st.column_config.NumberColumn("Promo QTY", format="%d"),
+                "NORMAL_QTY": st.column_config.NumberColumn("Normal QTY", format="%d"),
+                "PROMO_REVENUE": st.column_config.NumberColumn("Promo Rev (Rp)", format="%,.0f"),
+                "NORMAL_REVENUE": st.column_config.NumberColumn("Normal Rev (Rp)", format="%,.0f"),
+                "QTY_LIFT_PCT": st.column_config.NumberColumn("Lift QTY %", format="%+.1f"),
+            },
+        )
+        with st.expander("📥 Download"):
+            st.download_button(
+                "💾 Download Excel — Efektivitas Promo",
+                to_excel_bytes({"Efektivitas_Promo": pe}),
+                file_name="efektivitas_promo.xlsx",
+                mime=XLSX_MIME,
+            )
+
+        st.markdown("#### 📈 Scatter: Diskon vs Volume (semua item)")
+        fig_pe = px.scatter(
+            pe, x="AVG_DISC_PCT", y="TOTAL_QTY",
+            size="TOTAL_QTY", color="AVG_DISC_PCT",
+            color_continuous_scale="RdYlGn",
+            hover_data=["PLU", "NAMA_BRG", "TOTAL_REVENUE"],
+            title="Diskon (%) vs Total QTY Terjual",
+            labels={"AVG_DISC_PCT": "Rata-rata Diskon (%)", "TOTAL_QTY": "Total QTY"},
+        )
+        fig_pe.update_layout(height=480)
+        st.plotly_chart(fig_pe, use_container_width=True)
