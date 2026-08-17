@@ -18,7 +18,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pandas numpy openpyxl bcrypt python-dateutil et-xmlfile
+          pip install pytest pandas numpy openpyxl bcrypt streamlit python-dateutil et-xmlfile
       - name: Syntax check semua file Python
         run: |
           python -m py_compile bundle_analyzer.py bundle_analyzer_multi.py bundle_analyzer_web.py stock_card.py stock_sales_analyzer.py auth.py pages/1_Stock_Sales_Analyzer.py pages/2_YoY_Forecast.py pages/3_Stock_Card.py pages/4_Stock_Opname.py
